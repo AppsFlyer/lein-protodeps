@@ -1,0 +1,4 @@
+protoc:
+  version: 3.8.0
+lint:
+  group: uber2
