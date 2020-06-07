@@ -46,18 +46,18 @@
 (defn write-zip-entry! [^java.util.zip.ZipInputStream zinp
                         ^java.util.zip.ZipEntry entry
                         base-path]
-  (let [file-name (append-dir base-path (.getName entry))]
-    (let [size       (.getCompressedSize entry)
-          ^bytes buf (byte-array 1024)]
-      (if (zero? size)
-        (.mkdirs (io/file file-name))
-        (with-open [outp (io/output-stream file-name)]
-          (println "unzipping" file-name)
-          (loop []
-            (let [bytes-read (.read zinp buf)]
-              (when (pos? bytes-read)
-                (.write outp buf 0 bytes-read)
-                (recur)))))))))
+  (let [file-name  (append-dir base-path (.getName entry))
+        size       (.getCompressedSize entry)
+        ^bytes buf (byte-array 1024)]
+    (if (zero? size)
+      (.mkdirs (io/file file-name))
+      (with-open [outp (io/output-stream file-name)]
+        (println "unzipping" file-name)
+        (loop []
+          (let [bytes-read (.read zinp buf)]
+            (when (pos? bytes-read)
+              (.write outp buf 0 bytes-read)
+              (recur))))))))
 
 (defn unzip! [^java.util.zip.ZipInputStream zinp dst]
   (loop []
@@ -160,7 +160,7 @@
 
 (defmethod run-prototool! :generate [_ _ project]
   (let [home-dir        (init-rc-dir!)
-        config          (:af-lein-protobuf project)
+        config          (:lein-protobuf project)
         output-path     (:output-path config)
         proto-version   (:proto-version config)
         protoc-installs (append-dir home-dir "protoc-installations")
