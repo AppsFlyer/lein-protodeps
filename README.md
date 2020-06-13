@@ -1,4 +1,4 @@
-# af-lein-protobuf
+# af-lein-protodeps
 
 A Leiningen plugin to do many wonderful things.
 
@@ -6,16 +6,16 @@ A Leiningen plugin to do many wonderful things.
 
 FIXME: Use this for user-level plugins:
 
-Put `[af-lein-protobuf "0.1.0-SNAPSHOT"]` into the `:plugins` vector of your `:user`
+Put `[af-lein-protodeps "0.1.0-SNAPSHOT"]` into the `:plugins` vector of your `:user`
 profile.
 
 FIXME: Use this for project-level plugins:
 
-Put `[af-lein-protobuf "0.1.0-SNAPSHOT"]` into the `:plugins` vector of your project.clj.
+Put `[af-lein-protodeps "0.1.0-SNAPSHOT"]` into the `:plugins` vector of your project.clj.
 
 FIXME: and add an example usage that actually makes sense:
 
-    $ lein af-lein-protobuf
+    $ lein af-lein-protodeps
 
 ## License
 
