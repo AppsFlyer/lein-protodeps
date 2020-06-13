@@ -5,17 +5,18 @@
             [clojure.java.shell :as sh])
   (:import [java.io File]
            [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]))
+           [java.nio.file.attribute FileAttribute]
+           [java.nio.file Path]))
 
 (defn print-err [& s]
   (binding [*out* *err*]
     (apply println s)))
 
-(defn parse-dependency [[dep-path rev & opts]]
+(defn parse-dependency [[dep-path & opts]]
   (if-not (even? (count opts))
     (throw (IllegalArgumentException. "dependency opts should be key-value pairs"))
     (let [opts-map (apply hash-map opts)]
-      (merge opts-map {:dep-path (str dep-path) :rev rev}))))
+      (merge opts-map {:dep-path (str dep-path)}))))
 
 (defn parse-config [config]
   (->> config
@@ -26,19 +27,28 @@
   (strings/join File/separator (concat [parent] children)))
 
 (defn checkout! [git-repo tag-or-sha]
-  (git/git-checkout git-repo :name tag-or-sha))
+  (when tag-or-sha
+    (git/git-checkout git-repo :name tag-or-sha)))
 
-(defn clone! [repo]
-  (let [path (Files/createTempDirectory nil (make-array FileAttribute 0))]
+(defn create-temp-dir!
+  ([] (create-temp-dir! nil))
+  ([^Path base-path]
+   (let [file-attrs (make-array FileAttribute 0)]
+     (if base-path
+       (Files/createTempDirectory base-path nil file-attrs)
+       (Files/createTempDirectory nil file-attrs)))))
+
+(defn clone! [base-path repo]
+  (let [path (create-temp-dir! base-path)]
     (println "cloning" repo "...")
     {:path path :git (git/git-clone repo :dir (str path))}))
 
 
-(defn clone-repos! [dependencies]
+(defn clone-repos! [base-path dependencies]
   (let [repo-names      (->> dependencies
                              (map :repo)
                              distinct)
-        repos           (map clone! repo-names)
+        repos           (map (partial clone! base-path) repo-names)
         repo-name->repo (zipmap repo-names repos)]
     (->> dependencies
          (map #(assoc % :repo (get repo-name->repo (:repo %)))))))
@@ -158,6 +168,10 @@
                   (:java-source-paths project))
     (print-warning "output-path" output-path "not found in :java-source-paths")))
 
+(defn cleanup-dir! [^Path path]
+  (doseq [file (reverse (file-seq (.toFile path)))]
+    (.delete ^File file)))
+
 (defmethod run-prototool! :generate [_ _ project]
   (let [home-dir        (init-rc-dir!)
         config          (:lein-protodeps project)
@@ -165,27 +179,28 @@
         proto-version   (:proto-version config)
         protoc-installs (append-dir home-dir "protoc-installations")
         protoc-release  (get-protoc-release proto-version)
-        dependencies    (map parse-dependency (:dependencies config))]
-    (when (seq dependencies)
-      (validate-output-path output-path project)
-      (when-not proto-version
-        (throw (ex-info "proto version not defined" {})))
-      (let [protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
-        (when-not (.exists ^File (io/file protoc))
-          (download-protoc! release-url proto-version protoc-release protoc-installs)
-          (set-protoc-permissions! protoc))
-        (mkdir! output-path)
-        (doseq [dep (clone-repos! dependencies)]
-          (let [repo (:repo dep)]
-            (checkout! (:git repo) (:rev dep))
-            (doseq [proto-file (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep)))]
-              (let [protoc-opts [(str "-I" (append-dir (:path repo) (:root dep))) (str "--java_out=" output-path) (.getAbsolutePath proto-file)]]
-                (println "compiling" (.getName proto-file) "...")
-                (run-protoc! protoc protoc-opts)))))))))
+        dependencies    (map parse-dependency (:dependencies config))
+        base-temp-path  (create-temp-dir!)]
+    (try
+      (when (seq dependencies)
+        (validate-output-path output-path project)
+        (when-not proto-version
+          (throw (ex-info "proto version not defined" {})))
+        (let [protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
+          (when-not (.exists ^File (io/file protoc))
+            (download-protoc! release-url proto-version protoc-release protoc-installs)
+            (set-protoc-permissions! protoc))
+          (mkdir! output-path)
+          (doseq [dep (clone-repos! base-temp-path dependencies)]
+            (let [repo (:repo dep)]
+              (checkout! (:git repo) (:rev dep))
+              (doseq [proto-file (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep)))]
+                (let [protoc-opts [(str "-I" (append-dir (:path repo) (:root dep))) (str "--java_out=" output-path) (.getAbsolutePath proto-file)]]
+                  (println "compiling" (.getName proto-file) "...")
+                  (run-protoc! protoc protoc-opts)))))))
+      (finally
+        (cleanup-dir! base-temp-path)))))
 
 (defn protodeps
   [project & [mode & args]]
   (run-prototool! (keyword mode) args project))
-
-
-
