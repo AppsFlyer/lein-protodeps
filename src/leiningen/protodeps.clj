@@ -12,11 +12,11 @@
   (binding [*out* *err*]
     (apply println s)))
 
-(defn parse-dependency [[dep-path & opts]]
+(defn parse-dependency [[dep-path repo & opts]]
   (if-not (even? (count opts))
     (throw (IllegalArgumentException. "dependency opts should be key-value pairs"))
     (let [opts-map (apply hash-map opts)]
-      (merge opts-map {:dep-path (str dep-path)}))))
+      (merge opts-map {:dep-path (str dep-path) :repo (str repo)}))))
 
 (defn parse-config [config]
   (->> config
