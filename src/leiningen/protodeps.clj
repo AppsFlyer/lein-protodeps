@@ -115,13 +115,17 @@
 
 
 (defn run-protoc! [protoc-path opts]
-  (let [{:keys [exit out err]} (apply sh/sh protoc-path opts)]
+  (let [{:keys [exit] :as r} (apply sh/sh protoc-path opts)]
+    (if (= 0 exit)
+      r
+      (throw (ex-info "protoc failed" {:exit exit})))))
+
+(defn run-protoc-and-report! [protoc-path opts]
+  (let [{:keys [out err]} (run-protoc! protoc-path opts)]
     (when-not (strings/blank? err)
       (print-err err))
     (when-not (strings/blank? out)
-      (println out))
-    (when-not (= 0 exit)
-      (throw (ex-info "protoc failed" {:exit exit})))))
+      (println out))))
 
 (def release-url "https://github.com/protocolbuffers/protobuf/releases/download")
 
@@ -148,6 +152,18 @@
 
 (defmethod run-prototool! :default [mode _ _] (throw (ex-info "unknown command" {:command mode})))
 
+(defn get-file-dependencies [protoc-path proto-path ^File proto-file]
+  (map io/file
+       (re-seq #"[^\s]*\.proto" (:out (run-protoc! protoc-path [(str "--proto_path=" proto-path) "-o/dev/null" "--dependency_out=/dev/stdout" (.getAbsolutePath proto-file)])))))
+
+(defn expand-dependencies [protoc-path proto-path proto-files]
+  (loop [seen-files (set proto-files)
+         [f & r]    proto-files]
+    (if-not f
+      seen-files
+      (let [deps (get-file-dependencies protoc-path proto-path f)]
+        (recur (conj seen-files f)
+               (concat r (filter (complement seen-files) deps)))))))
 
 (defn print-warning [& s]
   (apply print-err "WARNING:" s))
@@ -192,12 +208,16 @@
             (set-protoc-permissions! protoc))
           (mkdir! output-path)
           (doseq [dep (clone-repos! base-temp-path dependencies)]
-            (let [repo (:repo dep)]
+            (let [repo       (:repo dep)
+                  proto-path (append-dir (:path repo) (:root dep))]
               (checkout! (:git repo) (:rev dep))
-              (doseq [proto-file (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep)))]
-                (let [protoc-opts [(str "-I" (append-dir (:path repo) (:root dep))) (str "--java_out=" output-path) (.getAbsolutePath proto-file)]]
+              (doseq [proto-file (expand-dependencies protoc proto-path (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep))))]
+                (let [protoc-opts [(str "--proto_path=" proto-path)
+                                   (str "--java_out=" output-path)
+                                   (str "--dependency_out=" (append-dir (:path repo) (str "dependency_out_" (.getName proto-file))))
+                                   (.getAbsolutePath proto-file)]]
                   (println "compiling" (.getName proto-file) "...")
-                  (run-protoc! protoc protoc-opts)))))))
+                  (run-protoc-and-report! protoc protoc-opts)))))))
       (finally
         (cleanup-dir! base-temp-path)))))
 
