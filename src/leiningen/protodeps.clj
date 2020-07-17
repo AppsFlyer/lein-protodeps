@@ -152,9 +152,15 @@
 
 (defmethod run-prototool! :default [mode _ _] (throw (ex-info "unknown command" {:command mode})))
 
+(defn long-opt [k v]
+  (str "--" k "=" v))
+
 (defn get-file-dependencies [protoc-path proto-path ^File proto-file]
   (map io/file
-       (re-seq #"[^\s]*\.proto" (:out (run-protoc! protoc-path [(str "--proto_path=" proto-path) "-o/dev/null" "--dependency_out=/dev/stdout" (.getAbsolutePath proto-file)])))))
+       (re-seq #"[^\s]*\.proto" (:out (run-protoc! protoc-path [(long-opt "proto_path" proto-path)
+                                                                (long-opt "dependency_out" "/dev/stdout")
+                                                                "-o/dev/null"
+                                                                (.getAbsolutePath proto-file)])))))
 
 (defn expand-dependencies [protoc-path proto-path proto-files]
   (loop [seen-files (set proto-files)
@@ -212,9 +218,8 @@
                   proto-path (append-dir (:path repo) (:root dep))]
               (checkout! (:git repo) (:rev dep))
               (doseq [proto-file (expand-dependencies protoc proto-path (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep))))]
-                (let [protoc-opts [(str "--proto_path=" proto-path)
-                                   (str "--java_out=" output-path)
-                                   (str "--dependency_out=" (append-dir (:path repo) (str "dependency_out_" (.getName proto-file))))
+                (let [protoc-opts [(long-opt "proto_path" proto-path)
+                                   (long-opt "java_out" output-path)
                                    (.getAbsolutePath proto-file)]]
                   (println "compiling" (.getName proto-file) "...")
                   (run-protoc-and-report! protoc protoc-opts)))))))
