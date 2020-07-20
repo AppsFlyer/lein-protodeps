@@ -77,7 +77,7 @@
       (recur))))
 
 (def os-name->os {"Linux" "linux" "Mac OS X" "osx"})
-(def os-arch->arch {"amd64" "x86_64"})
+(def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64"})
 
 (defn get-prop [prop-name]
   (if-let [v (System/getProperty prop-name)]
