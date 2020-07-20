@@ -16,6 +16,10 @@ Put `[lein-protodeps "0.1.4"]` into the `:plugins` vector of your project.clj.
 FIXME: and add an example usage that actually makes sense:
 
     $ lein protodeps
+    
+To compile the proto files and place the generated files in the java sources folder:
+
+    $ lein protodeps generate
 
 ## License
 
