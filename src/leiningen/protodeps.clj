@@ -132,7 +132,7 @@
 (defn mkdir! [dir-path]
   (let [dir (io/file dir-path)]
     (when-not (or (.exists dir)
-                  (.mkdir dir))
+                  (.mkdirs dir))
       (throw (ex-info "failed to create dir" {:dir dir-path})))
     dir))
 
