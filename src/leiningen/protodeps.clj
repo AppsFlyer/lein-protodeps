@@ -118,7 +118,7 @@
   (let [{:keys [exit] :as r} (apply sh/sh protoc-path opts)]
     (if (= 0 exit)
       r
-      (throw (ex-info "protoc failed" {:exit exit})))))
+      (throw (ex-info "protoc failed" r)))))
 
 (defn run-protoc-and-report! [protoc-path opts]
   (let [{:keys [out err]} (run-protoc! protoc-path opts)]
