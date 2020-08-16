@@ -220,6 +220,7 @@
               (doseq [proto-file (expand-dependencies protoc proto-path (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep))))]
                 (let [protoc-opts [(long-opt "proto_path" proto-path)
                                    (long-opt "java_out" output-path)
+                                   (long-opt "grpc-java_out" output-path)
                                    (.getAbsolutePath proto-file)]]
                   (println "compiling" (.getName proto-file) "...")
                   (run-protoc-and-report! protoc protoc-opts)))))))
