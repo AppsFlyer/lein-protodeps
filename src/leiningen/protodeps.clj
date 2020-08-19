@@ -8,20 +8,30 @@
            [java.nio.file.attribute FileAttribute]
            [java.nio.file Path]))
 
+(defn- lookup [k]
+  (if (and (keyword? k) (= "env" (namespace k)))
+    (System/getenv (name k))
+    k))
+
 (defn print-err [& s]
   (binding [*out* *err*]
     (apply println s)))
 
-(defn parse-dependency [[dep-path repo & opts]]
+(defn parse-dependency [repos-config [dep-path & opts]]
   (if-not (even? (count opts))
     (throw (IllegalArgumentException. "dependency opts should be key-value pairs"))
-    (let [opts-map (apply hash-map opts)]
-      (merge opts-map {:dep-path (str dep-path) :repo (str repo)}))))
-
-(defn parse-config [config]
-  (->> config
-       :dependencies
-       (map parse-dependency)))
+    (let [opts-map (apply hash-map opts)
+          repo-id  (:repo-id opts-map)
+          repo     (get repos-config repo-id)]
+      ;; TODO: better validation
+      (when (nil? dep-path)
+        (throw (ex-info "nil dep path" {})))
+      (when (nil? repo-id)
+        (throw (ex-info "nil repo-id" {})))
+      (when-not repo
+        (throw (ex-info "Repo not configured" {:repo-id repo-id})))
+      (-> opts-map
+          (assoc :dep-path (str dep-path))))))
 
 (defn append-dir [parent & children]
   (strings/join File/separator (concat [parent] children)))
@@ -38,20 +48,23 @@
        (Files/createTempDirectory base-path nil file-attrs)
        (Files/createTempDirectory nil file-attrs)))))
 
-(defn clone! [base-path repo]
-  (let [path (create-temp-dir! base-path)]
-    (println "cloning" repo "...")
-    {:path path :git (git/git-clone repo :dir (str path))}))
+(defn clone! [base-path repo-config]
+  (let [path       (create-temp-dir! base-path)
+        git-config (:git-config repo-config)
+        repo-url   (:clone-url git-config)]
+    (let [repo (git/git-clone repo-url :dir (str path))]
+      (checkout! repo (:rev repo-config))
+      {:path path :git repo})))
 
 
-(defn clone-repos! [base-path dependencies]
-  (let [repo-names      (->> dependencies
-                             (map :repo)
-                             distinct)
-        repos           (map (partial clone! base-path) repo-names)
-        repo-name->repo (zipmap repo-names repos)]
-    (->> dependencies
-         (map #(assoc % :repo (get repo-name->repo (:repo %)))))))
+(defmulti resolve-repo (fn [_ctx repo-config] (:repo-type repo-config)))
+
+(defmethod resolve-repo :git [ctx repo-config]
+  (clone! (:base-path ctx) repo-config))
+
+(defn resolve-repos! [ctx repos-config]
+  (let [repos (map (partial resolve-repo ctx) (vals repos-config))]
+    (zipmap (keys repos-config) repos)))
 
 (defn write-zip-entry! [^java.util.zip.ZipInputStream zinp
                         ^java.util.zip.ZipEntry entry
@@ -194,15 +207,30 @@
   (doseq [file (reverse (file-seq (.toFile path)))]
     (.delete ^File file)))
 
+
+(defn validate-repos-config! [repos-config]
+  ;; TODO: yeah...
+  repos-config)
+
+
+;; TODO: remove?
+(defn parse-repos-config [repos-config]
+  (let [repos-config (validate-repos-config! repos-config)]
+    repos-config))
+
 (defmethod run-prototool! :generate [_ _ project]
   (let [home-dir        (init-rc-dir!)
         config          (:lein-protodeps project)
+        repos-config    (parse-repos-config (:repos config))
+        dependencies    (mapv (partial parse-dependency repos-config) (:dependencies config))
         output-path     (:output-path config)
         proto-version   (:proto-version config)
         protoc-installs (append-dir home-dir "protoc-installations")
         protoc-release  (get-protoc-release proto-version)
-        dependencies    (map parse-dependency (:dependencies config))
-        base-temp-path  (create-temp-dir!)]
+        base-temp-path  (create-temp-dir!)
+        ctx             {:base-temp-path base-temp-path}
+        repo-id->repo   (resolve-repos! ctx repos-config)]
+    (println config)
     (try
       (when (seq dependencies)
         (validate-output-path output-path project)
@@ -213,11 +241,12 @@
             (download-protoc! release-url proto-version protoc-release protoc-installs)
             (set-protoc-permissions! protoc))
           (mkdir! output-path)
-          (doseq [dep (clone-repos! base-temp-path dependencies)]
-            (let [repo       (:repo dep)
+          (doseq [dep dependencies]
+            (let [repo       (get repo-id->repo (:repo-id dep))
                   proto-path (append-dir (:path repo) (:root dep))]
-              (checkout! (:git repo) (:rev dep))
-              (doseq [proto-file (expand-dependencies protoc proto-path (discover-files (:path repo) (append-dir (:root dep) (:dep-path dep))))]
+              (doseq [proto-file (expand-dependencies protoc proto-path (discover-files (:path repo)
+                                                                                        (append-dir (:root dep)
+                                                                                                    (:dep-path dep))))]
                 (let [protoc-opts [(long-opt "proto_path" proto-path)
                                    (long-opt "java_out" output-path)
                                    (long-opt "grpc-java_out" output-path)
@@ -230,3 +259,11 @@
 (defn protodeps
   [project & [mode & args]]
   (run-prototool! (keyword mode) args project))
+
+(comment
+  (def config '{:output-path   "src/java/generated"
+                :proto-version "3.12.4"
+                :repos         {:af-proto {:repo-type  :git
+                                           :git-config {:clone-url "git@localhost:test/repo.git"
+                                                        :rev       "origin/mybranch"}}}
+                :dependencies  [[events :repo-id :af-proto :compile-grpc? true :root "products"]]}))

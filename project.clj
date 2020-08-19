@@ -1,13 +1,15 @@
-(defproject lein-protodeps "0.1.10"
+(defproject lein-protodeps "0.1.10-BLA"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Apache License, Version 2.0"
             :url  "http://www.apache.org/licenses/LICENSE-2.0.html"}
   :eval-in-leiningen true
-  :deploy-repositories [["releases"  {:url           "***REMOVED***/" :username :***REMOVED***
+  :deploy-repositories [["releases"  {:url           "***REMOVED***/"
+                                      :username      :***REMOVED***
                                       :password      :***REMOVED***
                                       :sign-releases false}]
-                        ["snapshots"  {:url           "***REMOVED***" :username :***REMOVED***
+                        ["snapshots"  {:url           "***REMOVED***"
+                                       :username      :***REMOVED***
                                        :password      :***REMOVED***
                                        :sign-releases false}]]
   :repositories [["jitpack.io" "https://jitpack.io"]]
