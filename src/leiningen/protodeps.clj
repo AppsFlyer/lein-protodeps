@@ -34,7 +34,7 @@
 
 (defn clone! [base-path repo-config]
   (let [path       (create-temp-dir! base-path)
-        git-config (:git-config repo-config)
+        git-config (:config repo-config)
         repo-url   (:clone-url git-config)
         repo       (case (:auth-method git-config :ssh)
                      :ssh  (git/git-clone repo-url :dir (str path))
@@ -50,6 +50,9 @@
 
 (defmethod resolve-repo :git [ctx repo-config]
   (clone! (:base-path ctx) repo-config))
+
+(defmethod resolve-repo :filesystem [_ repo-config]
+  (-> repo-config :config :path))
 
 (defn write-zip-entry! [^java.util.zip.ZipInputStream zinp
                         ^java.util.zip.ZipEntry entry
@@ -292,8 +295,11 @@
                 :proto-version "3.12.4"
                 :grpc-version  "1.30.2"
                 :compile-grpc? true
-                :repos         {:af-proto {:repo-type    :git
-                                           :git-config   {:clone-url   "git@localhost:test/repo.git"
-                                                          :rev         "origin/mybranch"
-                                                          :auth-method :ssh}
-                                           :dependencies [{:proto-path "products" :proto-dir "events"}]}}}))
+                :repos         {:af-proto #_ {:repo-type    :filesystem
+                                              :config       {:path "/home/ronen/Projects/af-proto"}
+                                              :dependencies [{:proto-path "products" :proto-dir "events"}]}
+                                {:repo-type    :git
+                                 :config       {:clone-url   "git@localhost:test/repo.git"
+                                                :rev         "origin/mybranch"
+                                                :auth-method :ssh}
+                                 :dependencies [{:proto-path "products" :proto-dir "events"}]}}}))
