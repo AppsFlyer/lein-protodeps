@@ -51,10 +51,14 @@
 (defn clone! [base-path repo-config]
   (let [path       (create-temp-dir! base-path)
         git-config (:git-config repo-config)
-        repo-url   (:clone-url git-config)]
-    (let [repo (git/git-clone repo-url :dir (str path))]
-      (checkout! repo (:rev repo-config))
-      {:path path :git repo})))
+        repo-url   (:clone-url git-config)
+        repo       (case (:auth-method git-config :ssh)
+                     :ssh  (git/git-clone repo-url :dir (str path))
+                     :http (git/with-credentials {:login (lookup (:user git-config))
+                                                  :pw    (lookup (:password git-config))}
+                             (git/git-clone repo-url :dir (str path))))]
+    (checkout! repo (:rev repo-config))
+    {:path path :git repo}))
 
 
 (defmulti resolve-repo (fn [_ctx repo-config] (:repo-type repo-config)))
@@ -264,6 +268,7 @@
   (def config '{:output-path   "src/java/generated"
                 :proto-version "3.12.4"
                 :repos         {:af-proto {:repo-type  :git
-                                           :git-config {:clone-url "git@localhost:test/repo.git"
-                                                        :rev       "origin/mybranch"}}}
+                                           :git-config {:clone-url   "https://***REMOVED***/DataInfra/af-proto.git"
+                                                        :rev         "origin/mybranch"
+                                                        :auth-method :ssh}}}
                 :dependencies  [[events :repo-id :af-proto :compile-grpc? true :root "products"]]}))
