@@ -89,11 +89,20 @@
       (throw (ex-info "unknown property value" {:prop-name prop-name :prop-value v})))
     v'))
 
-(defn get-protoc-release [protoc-version]
+(defn- get-protoc-release [protoc-version]
   (strings/join "-" ["protoc" protoc-version
                      (translate-prop os-name->os "os.name")
                      (translate-prop os-arch->arch "os.arch")]))
 
+(def ^:private grpc-plugin-executable-name "protoc-gen-grpc-java")
+
+(defn- get-grpc-release [grpc-version]
+  (str
+    (strings/join "-" [grpc-plugin-executable-name
+                       grpc-version
+                       (translate-prop os-name->os "os.name")
+                       (translate-prop os-arch->arch "os.arch")])
+    ".exe"))
 
 (defn set-protoc-permissions! [protoc-path]
   (let [permissions (java.util.HashSet.)]
@@ -111,6 +120,12 @@
         (unzip! inp dst))
       dst)))
 
+(defn- download-grpc-plugin! [grpc-release-url grpc-version grpc-release grpc-plugin-file]
+  (let [url (str grpc-release-url "/" grpc-version "/" grpc-release)]
+    (println "Downloading grpc java plugin from" url "...")
+    (with-open [outputs (io/output-stream (io/file grpc-plugin-file))]
+      (io/copy (io/input-stream url) outputs))))
+
 
 (defn run-protoc! [protoc-path opts]
   (let [{:keys [exit] :as r} (apply sh/sh protoc-path opts)]
@@ -125,7 +140,9 @@
     (when-not (strings/blank? out)
       (println out))))
 
-(def release-url "https://github.com/protocolbuffers/protobuf/releases/download")
+(def protoc-release-url "https://github.com/protocolbuffers/protobuf/releases/download")
+
+(def grpc-release-url "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java")
 
 (defn mkdir! [dir-path]
   (let [dir (io/file dir-path)]
@@ -135,8 +152,15 @@
     dir))
 
 
+(def ^:private protoc-install-dir "protoc-installations")
+(def ^:private grpc-install-dir "grpc-installations")
+
 (defn init-rc-dir! []
-  (mkdir! (append-dir (get-prop "user.home") ".lein-prototool")))
+  (let [home (append-dir (get-prop "user.home") ".lein-prototool")]
+    (mkdir! home)
+    (mkdir! (append-dir home protoc-install-dir))
+    (mkdir! (append-dir home grpc-install-dir))
+    home))
 
 (defn discover-files [git-repo-path dep-path]
   (filter
@@ -198,10 +222,19 @@
   repos-config)
 
 
+
 ;; TODO: remove?
 (defn parse-repos-config [repos-config]
   (let [repos-config (validate-repos-config! repos-config)]
     (vals repos-config)))
+
+(defn protoc-opts [proto-path output-path compile-grpc? grpc-plugin ^File proto-file]
+  (let [protoc-opts [(long-opt "proto_path" proto-path)
+                     (long-opt "java_out" output-path)]]
+    (cond-> protoc-opts
+      compile-grpc? (conj (long-opt "grpc-java_out" output-path))
+      compile-grpc? (conj (long-opt "plugin" grpc-plugin))
+      true          (conj (.getAbsolutePath proto-file)))))
 
 (defmethod run-prototool! :generate [_ _ project]
   (let [home-dir        (init-rc-dir!)
@@ -209,18 +242,29 @@
         repos-config    (parse-repos-config (:repos config))
         output-path     (:output-path config)
         proto-version   (:proto-version config)
-        protoc-installs (append-dir home-dir "protoc-installations")
+        protoc-installs (append-dir home-dir protoc-install-dir)
         protoc-release  (get-protoc-release proto-version)
+        compile-grpc?   (:compile-grpc? config)
+        grpc-installs   (append-dir home-dir grpc-install-dir)
+        grpc-version    (:grpc-version config)
+        grpc-release    (get-grpc-release grpc-version)
         base-temp-path  (create-temp-dir!)
         ctx             {:base-temp-path base-temp-path}]
     (try
       (validate-output-path output-path project)
       (when-not proto-version
         (throw (ex-info "proto version not defined" {})))
-      (let [protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
+      (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
+            grpc-plugin-dir (append-dir grpc-installs grpc-version)
+            grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
         (when-not (.exists ^File (io/file protoc))
-          (download-protoc! release-url proto-version protoc-release protoc-installs)
+          (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
           (set-protoc-permissions! protoc))
+        (when (and compile-grpc? (not (.exists ^File (io/file grpc-plugin))))
+          (when-not (.mkdirs (io/file grpc-plugin-dir))
+            (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
+          (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
+          (set-protoc-permissions! grpc-plugin))
         (mkdir! output-path)
         (doseq [repo repos-config]
           (let [repo-path (resolve-repo ctx repo)]
@@ -229,10 +273,11 @@
                 (doseq [proto-file (expand-dependencies protoc abs-proto-path
                                                         (discover-files repo-path
                                                                         (append-dir proto-path proto-dir)))]
-                  (let [protoc-opts [(long-opt "proto_path" abs-proto-path)
-                                     (long-opt "java_out" output-path)
-                                     (long-opt "grpc-java_out" output-path)
-                                     (.getAbsolutePath proto-file)]]
+                  (let [protoc-opts (protoc-opts abs-proto-path
+                                                 output-path
+                                                 compile-grpc?
+                                                 grpc-plugin
+                                                 proto-file)]
                     (println "compiling" (.getName proto-file) "...")
                     (run-protoc-and-report! protoc protoc-opts))))))))
       (finally
@@ -245,6 +290,8 @@
 (comment
   (def config '{:output-path   "src/java/generated"
                 :proto-version "3.12.4"
+                :grpc-version  "1.30.2"
+                :compile-grpc? true
                 :repos         {:af-proto {:repo-type    :git
                                            :git-config   {:clone-url   "git@localhost:test/repo.git"
                                                           :rev         "origin/mybranch"
