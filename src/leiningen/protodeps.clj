@@ -126,8 +126,9 @@
 (defn- download-grpc-plugin! [grpc-release-url grpc-version grpc-release grpc-plugin-file]
   (let [url (str grpc-release-url "/" grpc-version "/" grpc-release)]
     (println "Downloading grpc java plugin from" url "...")
-    (with-open [outputs (io/output-stream (io/file grpc-plugin-file))]
-      (io/copy (io/input-stream url) outputs))))
+    (with-open [input-stream  (io/input-stream url)
+                output-stream (io/output-stream (io/file grpc-plugin-file))]
+      (io/copy input-stream output-stream))))
 
 
 (defn run-protoc! [protoc-path opts]

@@ -53,13 +53,13 @@ An example configuration:
 
 ## Git HTTP authentication
 
-To use HTTP authentication for cloning git repositories, use `:auth-method :http` and specify `:user` and `:password` keys in the repo's config map.
-These keys can be hardcoded strings or point to an environment variable via `:env/ENV_VAR_NAME`.
-
 Often, when working locally, you will probably want to use SSH when cloning from Git. However, this may not be possible in all environments, such as
 when building your project in your CI/CD pipeline.
 
-To allow this, you may override specific repo's configuration in a separate profile. For example, using the previous example:
+To use HTTP authentication for cloning git repositories, use `:auth-method :http` and specify `:user` and `:password` keys in the repo's config map.
+These keys can be hardcoded strings or point to an environment variable via `:env/ENV_VAR_NAME`.
+
+To allow this, you may override a specific repo's configuration in a separate profile. For example, using the previous example:
 
 ```clj
 
