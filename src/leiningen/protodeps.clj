@@ -234,7 +234,6 @@
         base-temp-path  (create-temp-dir!)
         ctx             {:base-temp-path base-temp-path}
         repo-id->repo   (resolve-repos! ctx repos-config)]
-    (println config)
     (try
       (when (seq dependencies)
         (validate-output-path output-path project)
