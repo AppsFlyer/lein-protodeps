@@ -12,7 +12,7 @@ are not already installed.
 
 ## Usage
 
-Put `[lein-protodeps "0.1.4"]` into the `:plugins` vector of your project.clj.
+Put `[lein-protodeps "0.1.14"]` into the `:plugins` vector of your project.clj.
 
 Once installed, run `lein protodeps generate` to run the plugin.
 
