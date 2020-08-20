@@ -17,22 +17,6 @@
   (binding [*out* *err*]
     (apply println s)))
 
-(defn parse-dependency [repos-config [dep-path & opts]]
-  (if-not (even? (count opts))
-    (throw (IllegalArgumentException. "dependency opts should be key-value pairs"))
-    (let [opts-map (apply hash-map opts)
-          repo-id  (:repo-id opts-map)
-          repo     (get repos-config repo-id)]
-      ;; TODO: better validation
-      (when (nil? dep-path)
-        (throw (ex-info "nil dep path" {})))
-      (when (nil? repo-id)
-        (throw (ex-info "nil repo-id" {})))
-      (when-not repo
-        (throw (ex-info "Repo not configured" {:repo-id repo-id})))
-      (-> opts-map
-          (assoc :dep-path (str dep-path))))))
-
 (defn append-dir [parent & children]
   (strings/join File/separator (concat [parent] children)))
 
@@ -57,18 +41,15 @@
                      :http (git/with-credentials {:login (lookup (:user git-config))
                                                   :pw    (lookup (:password git-config))}
                              (git/git-clone repo-url :dir (str path))))]
+    (println "cloning" repo-url "...")
     (checkout! repo (:rev repo-config))
-    {:path path :git repo}))
+    path))
 
 
 (defmulti resolve-repo (fn [_ctx repo-config] (:repo-type repo-config)))
 
 (defmethod resolve-repo :git [ctx repo-config]
   (clone! (:base-path ctx) repo-config))
-
-(defn resolve-repos! [ctx repos-config]
-  (let [repos (map (partial resolve-repo ctx) (vals repos-config))]
-    (zipmap (keys repos-config) repos)))
 
 (defn write-zip-entry! [^java.util.zip.ZipInputStream zinp
                         ^java.util.zip.ZipEntry entry
@@ -220,42 +201,40 @@
 ;; TODO: remove?
 (defn parse-repos-config [repos-config]
   (let [repos-config (validate-repos-config! repos-config)]
-    repos-config))
+    (vals repos-config)))
 
 (defmethod run-prototool! :generate [_ _ project]
   (let [home-dir        (init-rc-dir!)
         config          (:lein-protodeps project)
         repos-config    (parse-repos-config (:repos config))
-        dependencies    (mapv (partial parse-dependency repos-config) (:dependencies config))
         output-path     (:output-path config)
         proto-version   (:proto-version config)
         protoc-installs (append-dir home-dir "protoc-installations")
         protoc-release  (get-protoc-release proto-version)
         base-temp-path  (create-temp-dir!)
-        ctx             {:base-temp-path base-temp-path}
-        repo-id->repo   (resolve-repos! ctx repos-config)]
+        ctx             {:base-temp-path base-temp-path}]
     (try
-      (when (seq dependencies)
-        (validate-output-path output-path project)
-        (when-not proto-version
-          (throw (ex-info "proto version not defined" {})))
-        (let [protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
-          (when-not (.exists ^File (io/file protoc))
-            (download-protoc! release-url proto-version protoc-release protoc-installs)
-            (set-protoc-permissions! protoc))
-          (mkdir! output-path)
-          (doseq [dep dependencies]
-            (let [repo       (get repo-id->repo (:repo-id dep))
-                  proto-path (append-dir (:path repo) (:root dep))]
-              (doseq [proto-file (expand-dependencies protoc proto-path (discover-files (:path repo)
-                                                                                        (append-dir (:root dep)
-                                                                                                    (:dep-path dep))))]
-                (let [protoc-opts [(long-opt "proto_path" proto-path)
-                                   (long-opt "java_out" output-path)
-                                   (long-opt "grpc-java_out" output-path)
-                                   (.getAbsolutePath proto-file)]]
-                  (println "compiling" (.getName proto-file) "...")
-                  (run-protoc-and-report! protoc protoc-opts)))))))
+      (validate-output-path output-path project)
+      (when-not proto-version
+        (throw (ex-info "proto version not defined" {})))
+      (let [protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
+        (when-not (.exists ^File (io/file protoc))
+          (download-protoc! release-url proto-version protoc-release protoc-installs)
+          (set-protoc-permissions! protoc))
+        (mkdir! output-path)
+        (doseq [repo repos-config]
+          (let [repo-path (resolve-repo ctx repo)]
+            (doseq [{:keys [proto-path proto-dir]} (:dependencies repo)]
+              (let [abs-proto-path (append-dir repo-path proto-path)]
+                (doseq [proto-file (expand-dependencies protoc abs-proto-path
+                                                        (discover-files repo-path
+                                                                        (append-dir proto-path proto-dir)))]
+                  (let [protoc-opts [(long-opt "proto_path" abs-proto-path)
+                                     (long-opt "java_out" output-path)
+                                     (long-opt "grpc-java_out" output-path)
+                                     (.getAbsolutePath proto-file)]]
+                    (println "compiling" (.getName proto-file) "...")
+                    (run-protoc-and-report! protoc protoc-opts))))))))
       (finally
         (cleanup-dir! base-temp-path)))))
 
@@ -266,8 +245,8 @@
 (comment
   (def config '{:output-path   "src/java/generated"
                 :proto-version "3.12.4"
-                :repos         {:af-proto {:repo-type  :git
-                                           :git-config {:clone-url   "https://***REMOVED***/DataInfra/af-proto.git"
-                                                        :rev         "origin/mybranch"
-                                                        :auth-method :ssh}}}
-                :dependencies  [[events :repo-id :af-proto :compile-grpc? true :root "products"]]}))
+                :repos         {:af-proto {:repo-type    :git
+                                           :git-config   {:clone-url   "git@localhost:test/repo.git"
+                                                          :rev         "origin/mybranch"
+                                                          :auth-method :ssh}
+                                           :dependencies [{:proto-path "products" :proto-dir "events"}]}}}))
