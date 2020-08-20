@@ -1,4 +1,4 @@
-(defproject lein-protodeps "0.1.13"
+(defproject lein-protodeps "0.1.14"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Apache License, Version 2.0"
