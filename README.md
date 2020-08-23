@@ -55,6 +55,13 @@ An example configuration:
                                                         :dependencies [[products/foo]]}}}
 ```
 
+## Cross repository compilation
+
+`lein-protodeps` also supports cross-repo compilation, for example when a `.proto` file dependency in one repo imports a file
+residing in a different repo.
+
+To enable cross-repo compilation, simply add both repos to the `:repos` config map.
+
 ## Git HTTP authentication
 
 Often, when working locally, you will probably want to use SSH when cloning from Git. However, this may not be possible in all environments, such as
