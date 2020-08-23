@@ -41,14 +41,18 @@ An example configuration:
                                                            :rev         "origin/mybranch"
                                                            ;; authentication method - can be either :ssh or :http. Defauls to ssh if unspecified.
                                                            :auth-method :ssh}
+                                                ;; a vector of proto-paths relative to the directory root. May use an empty string if the root
+                                                ;; level is a proto path in itself.
+                                                :proto-paths ["products"]
                                                 ;; a vector of dependencies which control what stubs to compile. Each dependency vector
-                                                ;; contains the relative proto-path within the repo to be used when compiling this dependency (:proto-path),
-                                                ;; and the directory which contains the .proto files to compile (:proto-dir).
-                                                :dependencies [{:proto-path "products" :proto-dir "events"}]}
+                                                ;; contains a directory under one of the proto paths. All files in this directory and their
+                                                ;; dependencies will be compiled.
+                                                :dependencies [[products/events]]}
 
                                    :some-other-schemas {:repo-type    :filesystem ;; read files directly from filesystem instead of git.
                                                         :config       {:path "/home/ronen/Projects/af-proto"} ;; path
-                                                        :dependencies [{:proto-path "products" :proto-dir "foo"}]}}}
+                                                        :proto-paths  ["products"]
+                                                        :dependencies [[products/foo]]}}}
 ```
 
 ## Git HTTP authentication

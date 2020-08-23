@@ -33,17 +33,21 @@
        (Files/createTempDirectory nil file-attrs)))))
 
 (defn clone! [base-path repo-config]
-  (let [path       (create-temp-dir! base-path)
-        git-config (:config repo-config)
-        repo-url   (:clone-url git-config)
-        repo       (case (:auth-method git-config :ssh)
-                     :ssh  (git/git-clone repo-url :dir (str path))
-                     :http (git/with-credentials {:login (lookup (:user git-config))
-                                                  :pw    (lookup (:password git-config))}
-                             (git/git-clone repo-url :dir (str path))))]
+  (let [git-config (:config repo-config)
+        path       (str (create-temp-dir! base-path))
+        repo-url   (:clone-url git-config)]
     (println "cloning" repo-url "...")
-    (checkout! repo (:rev repo-config))
-    path))
+    (let [repo (case (:auth-method git-config :ssh)
+                 :ssh  (git/git-clone repo-url :dir (str path))
+                 :http (let [user     (lookup (:user git-config))
+                             password (lookup (:password git-config))]
+                         (if (or user password)
+                           (git/with-credentials {:login (lookup (:user git-config))
+                                                  :pw    (lookup (:password git-config))}
+                             (git/git-clone repo-url :dir (str path)))
+                           (git/git-clone repo-url :dir (str path)))))]
+      (checkout! repo (:rev repo-config))
+      path)))
 
 
 (defmulti resolve-repo (fn [_ctx repo-config] (:repo-type repo-config)))
@@ -181,19 +185,26 @@
 (defn long-opt [k v]
   (str "--" k "=" v))
 
-(defn get-file-dependencies [protoc-path proto-path ^File proto-file]
-  (map io/file
-       (re-seq #"[^\s]*\.proto" (:out (run-protoc! protoc-path [(long-opt "proto_path" proto-path)
-                                                                (long-opt "dependency_out" "/dev/stdout")
-                                                                "-o/dev/null"
-                                                                (.getAbsolutePath proto-file)])))))
+(defn with-proto-paths [protoc-args proto-paths]
+  (into protoc-args
+        (map (partial long-opt "proto_path")
+             proto-paths)))
 
-(defn expand-dependencies [protoc-path proto-path proto-files]
+(defn get-file-dependencies [protoc-path proto-paths ^File proto-file]
+  (map io/file
+       (re-seq #"[^\s]*\.proto" (:out (run-protoc! protoc-path
+                                                   (with-proto-paths
+                                                     [(long-opt "dependency_out" "/dev/stdout")
+                                                      "-o/dev/null"
+                                                      (.getAbsolutePath proto-file)]
+                                                     proto-paths))))))
+
+(defn expand-dependencies [protoc-path proto-paths proto-files]
   (loop [seen-files (set proto-files)
          [f & r]    proto-files]
     (if-not f
       seen-files
-      (let [deps (get-file-dependencies protoc-path proto-path f)]
+      (let [deps (get-file-dependencies protoc-path proto-paths f)]
         (recur (conj seen-files f)
                (concat r (filter (complement seen-files) deps)))))))
 
@@ -230,11 +241,10 @@
 ;; TODO: remove?
 (defn parse-repos-config [repos-config]
   (let [repos-config (validate-repos-config! repos-config)]
-    (vals repos-config)))
+    repos-config))
 
-(defn protoc-opts [proto-path output-path compile-grpc? grpc-plugin ^File proto-file]
-  (let [protoc-opts [(long-opt "proto_path" proto-path)
-                     (long-opt "java_out" output-path)]]
+(defn protoc-opts [proto-paths output-path compile-grpc? grpc-plugin ^File proto-file]
+  (let [protoc-opts (with-proto-paths [(long-opt "java_out" output-path)] proto-paths)]
     (cond-> protoc-opts
       compile-grpc? (conj (long-opt "grpc-java_out" output-path))
       compile-grpc? (conj (long-opt "plugin" grpc-plugin))
@@ -270,14 +280,18 @@
           (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
           (set-protoc-permissions! grpc-plugin))
         (mkdir! output-path)
-        (doseq [repo repos-config]
-          (let [repo-path (resolve-repo ctx repo)]
-            (doseq [{:keys [proto-path proto-dir]} (:dependencies repo)]
-              (let [abs-proto-path (append-dir repo-path proto-path)]
-                (doseq [proto-file (expand-dependencies protoc abs-proto-path
-                                                        (discover-files repo-path
-                                                                        (append-dir proto-path proto-dir)))]
-                  (let [protoc-opts (protoc-opts abs-proto-path
+        (let [repo-id->repo-path (zipmap (keys repos-config)
+                                         (map #(resolve-repo ctx %) (vals repos-config)))
+              proto-paths        (mapcat (fn [[repo-id repo-conf]]
+                                           (map #(append-dir (get repo-id->repo-path repo-id) %)
+                                                (:proto-paths repo-conf)))
+                                         repos-config)]
+          (doseq [[repo-id repo] repos-config]
+            (let [repo-path (get repo-id->repo-path repo-id)]
+              (doseq [[proto-dir] (:dependencies repo)]
+                (doseq [proto-file (expand-dependencies protoc proto-paths
+                                                        (discover-files repo-path (str proto-dir)))]
+                  (let [protoc-opts (protoc-opts proto-paths
                                                  output-path
                                                  compile-grpc?
                                                  grpc-plugin
@@ -300,7 +314,8 @@
                                               :config       {:path "/home/ronen/Projects/af-proto"}
                                               :dependencies [{:proto-path "products" :proto-dir "events"}]}
                                 {:repo-type    :git
+                                 :proto-paths  ["products"]
                                  :config       {:clone-url   "git@localhost:test/repo.git"
                                                 :rev         "origin/mybranch"
                                                 :auth-method :ssh}
-                                 :dependencies [{:proto-path "products" :proto-dir "events"}]}}}))
+                                 :dependencies [[products/events]]}}}))
