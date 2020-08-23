@@ -55,7 +55,7 @@ An example configuration:
                                                         :dependencies [[products/foo]]}}}
 ```
 
-## Cross repository compilation
+## Cross-repository compilation
 
 `lein-protodeps` also supports cross-repo compilation, for example when a `.proto` file dependency in one repo imports a file
 residing in a different repo.
