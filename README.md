@@ -47,12 +47,14 @@ An example configuration:
                                                 ;; a vector of dependencies which control what stubs to compile. Each dependency vector
                                                 ;; contains a directory under one of the proto paths. All files in this directory and their
                                                 ;; dependencies will be compiled.
-                                                :dependencies [[products/events]]}
+                                                :dependencies [[products/events]
+                                                               [products/adrevenue]]}
 
                                    :some-other-schemas {:repo-type    :filesystem ;; read files directly from filesystem instead of git.
                                                         :config       {:path "/home/ronen/Projects/af-proto"} ;; path
                                                         :proto-paths  ["products"]
-                                                        :dependencies [[products/foo]]}}}
+                                                        :dependencies [[products/foo]
+                                                                       [products/bar]]}}}
 ```
 
 ## Cross-repository compilation
