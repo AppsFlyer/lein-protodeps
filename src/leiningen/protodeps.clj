@@ -35,8 +35,9 @@
 (defn clone! [base-path repo-config]
   (let [git-config (:config repo-config)
         path       (str (create-temp-dir! base-path))
-        repo-url   (:clone-url git-config)]
-    (println "cloning" repo-url "...")
+        repo-url   (:clone-url git-config)
+        rev        (:rev git-config)]
+    (println "cloning" repo-url "at rev" rev "...")
     (let [repo (case (:auth-method git-config :ssh)
                  :ssh  (git/git-clone repo-url :dir (str path))
                  :http (let [user     (lookup (:user git-config))
@@ -46,7 +47,7 @@
                                                   :pw    (lookup (:password git-config))}
                              (git/git-clone repo-url :dir (str path)))
                            (git/git-clone repo-url :dir (str path)))))]
-      (checkout! repo (:rev repo-config))
+      (checkout! repo rev)
       path)))
 
 
