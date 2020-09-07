@@ -8,6 +8,12 @@
            [java.nio.file.attribute FileAttribute]
            [java.nio.file Path]))
 
+(def ^:dynamic *verbose?* false)
+
+(defn- verbose-prn [msg & args]
+  (when *verbose?*
+    (println "protodeps:" (apply format msg args))))
+
 (defn- lookup [k]
   (if (and (keyword? k) (= "env" (namespace k)))
     (System/getenv (name k))
@@ -122,7 +128,7 @@
 
 (defn download-protoc! [release-url protoc-version protoc-release base-path]
   (let [url (str release-url "/v" protoc-version "/" protoc-release ".zip")]
-    (println "Downloading protoc from" url "...")
+    (println "protodeps: Downloading protoc from" url "...")
     (let [dst (append-dir base-path protoc-release)]
       (with-open [inp (java.util.zip.ZipInputStream. (io/input-stream url))]
         (unzip! inp dst))
@@ -130,13 +136,14 @@
 
 (defn- download-grpc-plugin! [grpc-release-url grpc-version grpc-release grpc-plugin-file]
   (let [url (str grpc-release-url "/" grpc-version "/" grpc-release)]
-    (println "Downloading grpc java plugin from" url "...")
+    (println "protodeps: Downloading grpc java plugin from" url "...")
     (with-open [input-stream  (io/input-stream url)
                 output-stream (io/output-stream (io/file grpc-plugin-file))]
       (io/copy input-stream output-stream))))
 
 
 (defn run-protoc! [protoc-path opts]
+  (verbose-prn "running protoc with opts: %s" opts)
   (let [{:keys [exit] :as r} (apply sh/sh protoc-path opts)]
     (if (= 0 exit)
       r
@@ -210,7 +217,7 @@
                (concat r (filter (complement seen-files) deps)))))))
 
 (defn print-warning [& s]
-  (apply print-err "WARNING:" s))
+  (apply print-err "protodeps: WARNING:" s))
 
 (defn strip-suffix [suffix s]
   (if (strings/ends-with? s suffix)
@@ -237,8 +244,6 @@
   ;; TODO: yeah...
   repos-config)
 
-
-
 ;; TODO: remove?
 (defn parse-repos-config [repos-config]
   (let [repos-config (validate-repos-config! repos-config)]
@@ -251,8 +256,19 @@
       compile-grpc? (conj (long-opt "plugin" grpc-plugin))
       true          (conj (.getAbsolutePath proto-file)))))
 
-(defmethod run-prototool! :generate [_ _ project]
-  (let [home-dir        (init-rc-dir!)
+(defn- parse-args [args]
+  (let [valid-args {"verbose" {:verbose true}
+                    :verbose {:verbose true}}]           
+    (loop [sargs (vec (set args))
+           args-res {}]
+      (if (empty? sargs)
+        args-res
+        (let [arg (first sargs)]
+          (recur (rest sargs) (merge args-res (get valid-args arg))))))))
+
+(defmethod run-prototool! :generate [mode args project]
+  (let [parsed-args     (parse-args args)
+        home-dir        (init-rc-dir!)
         config          (:lein-protodeps project)
         repos-config    (parse-repos-config (:repos config))
         output-path     (:output-path config)
@@ -265,42 +281,56 @@
         grpc-release    (get-grpc-release grpc-version)
         base-temp-path  (create-temp-dir!)
         ctx             {:base-temp-path base-temp-path}]
-    (try
-      (validate-output-path output-path project)
-      (when-not proto-version
-        (throw (ex-info "proto version not defined" {})))
-      (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
-            grpc-plugin-dir (append-dir grpc-installs grpc-version)
-            grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
-        (when-not (.exists ^File (io/file protoc))
-          (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
-          (set-protoc-permissions! protoc))
-        (when (and compile-grpc? (not (.exists ^File (io/file grpc-plugin))))
-          (when-not (.mkdirs (io/file grpc-plugin-dir))
-            (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
-          (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
-          (set-protoc-permissions! grpc-plugin))
-        (mkdir! output-path)
-        (let [repo-id->repo-path (zipmap (keys repos-config)
-                                         (map #(resolve-repo ctx %) (vals repos-config)))
-              proto-paths        (mapcat (fn [[repo-id repo-conf]]
-                                           (map #(append-dir (get repo-id->repo-path repo-id) %)
-                                                (:proto-paths repo-conf)))
-                                         repos-config)]
-          (doseq [[repo-id repo] repos-config]
-            (let [repo-path (get repo-id->repo-path repo-id)]
-              (doseq [[proto-dir] (:dependencies repo)]
-                (doseq [proto-file (expand-dependencies protoc proto-paths
-                                                        (discover-files repo-path (str proto-dir)))]
-                  (let [protoc-opts (protoc-opts proto-paths
-                                                 output-path
-                                                 compile-grpc?
-                                                 grpc-plugin
-                                                 proto-file)]
-                    (println "compiling" (.getName proto-file) "...")
-                    (run-protoc-and-report! protoc protoc-opts))))))))
-      (finally
-        (cleanup-dir! base-temp-path)))))
+    (binding [*verbose?* (:verbose parsed-args)]
+      (verbose-prn "mode: %s args: %s parsed-args: %s" mode args parsed-args)
+      (try
+        (verbose-prn "config: %s" config)
+        (validate-output-path output-path project)
+        (when-not proto-version
+          (throw (ex-info "proto version not defined" {})))
+        (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
+              grpc-plugin-dir (append-dir grpc-installs grpc-version)
+              grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
+          (verbose-prn "paths: %s" {:protoc protoc
+                                    :grpc-plugin-dir grpc-plugin-dir
+                                    :grpc-plugin grpc-plugin})
+          (when-not (.exists ^File (io/file protoc))
+            (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
+            (set-protoc-permissions! protoc))
+          (when (and compile-grpc? (not (.exists ^File (io/file grpc-plugin))))
+            (when-not (.mkdirs (io/file grpc-plugin-dir))
+              (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
+            (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
+            (set-protoc-permissions! grpc-plugin))
+          (mkdir! output-path)
+          (verbose-prn "output-path: %s" output-path)
+          (let [repo-id->repo-path (zipmap (keys repos-config)
+                                           (map #(resolve-repo ctx %) (vals repos-config)))
+                proto-paths        (mapcat (fn [[repo-id repo-conf]]
+                                             (map #(append-dir (get repo-id->repo-path repo-id) %)
+                                                  (:proto-paths repo-conf)))
+                                           repos-config)]
+            (doseq [[repo-id repo] repos-config]
+              (let [repo-path (get repo-id->repo-path repo-id)]
+                (when (empty? (:dependencies repo))
+                  (print-warning ":dependencies is empty/missing. Skipping code generation."))
+                (doseq [[proto-dir] (:dependencies repo)]
+                  (verbose-prn "proto dir: %s" proto-dir)
+                  (let [proto-files (expand-dependencies protoc proto-paths
+                                                         (discover-files repo-path (str proto-dir)))]
+                    (verbose-prn "files: %s" (mapv #(.getName %) proto-files))
+                    (when (empty? proto-files)
+                      (print-warning "could not find any .proto files"))
+                    (doseq [proto-file proto-files]
+                      (let [protoc-opts (protoc-opts proto-paths
+                                                     output-path
+                                                     compile-grpc?
+                                                     grpc-plugin
+                                                     proto-file)]
+                        (println "compiling" (.getName proto-file) "...")
+                        (run-protoc-and-report! protoc protoc-opts)))))))))
+        (finally
+          (cleanup-dir! base-temp-path))))))
 
 (defn protodeps
   [project & [mode & args]]
