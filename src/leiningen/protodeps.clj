@@ -63,7 +63,7 @@
   (clone! (:base-path ctx) repo-config))
 
 (defmethod resolve-repo :filesystem [_ repo-config]
-  (-> repo-config :config :path))
+  (some-> repo-config :config :path io/file .getAbsolutePath))
 
 (defn write-zip-entry! [^java.util.zip.ZipInputStream zinp
                         ^java.util.zip.ZipEntry entry
