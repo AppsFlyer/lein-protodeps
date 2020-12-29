@@ -1,4 +1,4 @@
-(defproject lein-protodeps "0.1.18"
+(defproject lein-protodeps "0.1.19"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Apache License, Version 2.0"
@@ -13,5 +13,5 @@
                                        :password      :***REMOVED***
                                        :sign-releases false}]]
   :repositories [["jitpack.io" "https://jitpack.io"]]
-  :dependencies [[clj-jgit "1.0.0-beta3"]]
+  :dependencies [[clj-jgit "1.0.1"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]]}})
