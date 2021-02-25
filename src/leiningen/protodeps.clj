@@ -214,7 +214,12 @@
       seen-files
       (let [deps (get-file-dependencies protoc-path proto-paths f)]
         (recur (conj seen-files f)
-               (concat r (filter (complement seen-files) deps)))))))
+               (concat
+                 r
+                 (filter
+                   (fn [^File afile]
+                     (not (some #(Files/isSameFile (.toPath ^File %) (.toPath afile)) seen-files)))
+                   deps)))))))
 
 (defn print-warning [& s]
   (apply print-err "protodeps: WARNING:" s))
@@ -258,8 +263,8 @@
 
 (defn- parse-args [args]
   (let [valid-args {"verbose" {:verbose true}
-                    :verbose {:verbose true}}]           
-    (loop [sargs (vec (set args))
+                    :verbose  {:verbose true}}]
+    (loop [sargs    (vec (set args))
            args-res {}]
       (if (empty? sargs)
         args-res
@@ -291,9 +296,9 @@
         (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
               grpc-plugin-dir (append-dir grpc-installs grpc-version)
               grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
-          (verbose-prn "paths: %s" {:protoc protoc
+          (verbose-prn "paths: %s" {:protoc          protoc
                                     :grpc-plugin-dir grpc-plugin-dir
-                                    :grpc-plugin grpc-plugin})
+                                    :grpc-plugin     grpc-plugin})
           (when-not (.exists ^File (io/file protoc))
             (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
             (set-protoc-permissions! protoc))
