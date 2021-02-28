@@ -1,6 +1,6 @@
-(defproject lein-protodeps "0.1.20"
+(defproject lein-protodeps "0.1.21-SNAPSHOT"
   :description "FIXME: write description"
-  :url "http://example.com/FIXME"
+  :url "***REMOVED***"
   :license {:name "Apache License, Version 2.0"
             :url  "http://www.apache.org/licenses/LICENSE-2.0.html"}
   :eval-in-leiningen true
