@@ -1,4 +1,4 @@
-(defproject lein-protodeps "0.1.21-SNAPSHOT"
+(defproject lein-protodeps "0.1.21"
   :description "FIXME: write description"
   :url "***REMOVED***"
   :license {:name "Apache License, Version 2.0"

@@ -1,0 +1,8 @@
+syntax = "proto3";
+package dir1.v1;
+
+import "dir2/v1/file2.proto";
+
+message Proto1 {
+  dir2.v1.Proto2 proto2 = 1;
+}

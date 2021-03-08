@@ -271,10 +271,9 @@
         (let [arg (first sargs)]
           (recur (rest sargs) (merge args-res (get valid-args arg))))))))
 
-(defmethod run-prototool! :generate [mode args project]
-  (let [parsed-args     (parse-args args)
-        home-dir        (init-rc-dir!)
-        config          (:lein-protodeps project)
+
+(defn generate-files! [args config]
+  (let [home-dir        (init-rc-dir!)
         repos-config    (parse-repos-config (:repos config))
         output-path     (:output-path config)
         proto-version   (:proto-version config)
@@ -286,56 +285,62 @@
         grpc-release    (get-grpc-release grpc-version)
         base-temp-path  (create-temp-dir!)
         ctx             {:base-temp-path base-temp-path}]
+    (try
+      (verbose-prn "config: %s" config)
+      (when-not proto-version
+        (throw (ex-info "proto version not defined" {})))
+      (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
+            grpc-plugin-dir (append-dir grpc-installs grpc-version)
+            grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
+        (verbose-prn "paths: %s" {:protoc          protoc
+                                  :grpc-plugin-dir grpc-plugin-dir
+                                  :grpc-plugin     grpc-plugin})
+        (when-not (.exists ^File (io/file protoc))
+          (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
+          (set-protoc-permissions! protoc))
+        (when (and compile-grpc? (not (.exists ^File (io/file grpc-plugin))))
+          (when-not (.mkdirs (io/file grpc-plugin-dir))
+            (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
+          (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
+          (set-protoc-permissions! grpc-plugin))
+        (mkdir! output-path)
+        (verbose-prn "output-path: %s" output-path)
+        (let [repo-id->repo-path (zipmap (keys repos-config)
+                                         (map #(resolve-repo ctx %) (vals repos-config)))
+              proto-paths        (mapcat (fn [[repo-id repo-conf]]
+                                           (map #(append-dir (get repo-id->repo-path repo-id) %)
+                                                (:proto-paths repo-conf)))
+                                         repos-config)]
+          (doseq [[repo-id repo] repos-config]
+            (let [repo-path (get repo-id->repo-path repo-id)]
+              (when (empty? (:dependencies repo))
+                (print-warning ":dependencies is empty/missing. Skipping code generation."))
+              (doseq [[proto-dir] (:dependencies repo)]
+                (verbose-prn "proto dir: %s" proto-dir)
+                (let [proto-files (expand-dependencies protoc proto-paths
+                                                       (discover-files repo-path (str proto-dir)))]
+                  (verbose-prn "files: %s" (mapv #(.getName %) proto-files))
+                  (when (empty? proto-files)
+                    (print-warning "could not find any .proto files"))
+                  (doseq [proto-file proto-files]
+                    (let [protoc-opts (protoc-opts proto-paths
+                                                   output-path
+                                                   compile-grpc?
+                                                   grpc-plugin
+                                                   proto-file)]
+                      (println "compiling" (.getName proto-file) "...")
+                      (run-protoc-and-report! protoc protoc-opts)))))))))
+      (finally
+        (cleanup-dir! base-temp-path)))))
+
+(defmethod run-prototool! :generate [mode args project]
+  (let [parsed-args     (parse-args args)
+        config          (:lein-protodeps project)
+        output-path     (:output-path config)]
     (binding [*verbose?* (:verbose parsed-args)]
-      (verbose-prn "mode: %s args: %s parsed-args: %s" mode args parsed-args)
-      (try
-        (verbose-prn "config: %s" config)
-        (validate-output-path output-path project)
-        (when-not proto-version
-          (throw (ex-info "proto version not defined" {})))
-        (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
-              grpc-plugin-dir (append-dir grpc-installs grpc-version)
-              grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
-          (verbose-prn "paths: %s" {:protoc          protoc
-                                    :grpc-plugin-dir grpc-plugin-dir
-                                    :grpc-plugin     grpc-plugin})
-          (when-not (.exists ^File (io/file protoc))
-            (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
-            (set-protoc-permissions! protoc))
-          (when (and compile-grpc? (not (.exists ^File (io/file grpc-plugin))))
-            (when-not (.mkdirs (io/file grpc-plugin-dir))
-              (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
-            (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
-            (set-protoc-permissions! grpc-plugin))
-          (mkdir! output-path)
-          (verbose-prn "output-path: %s" output-path)
-          (let [repo-id->repo-path (zipmap (keys repos-config)
-                                           (map #(resolve-repo ctx %) (vals repos-config)))
-                proto-paths        (mapcat (fn [[repo-id repo-conf]]
-                                             (map #(append-dir (get repo-id->repo-path repo-id) %)
-                                                  (:proto-paths repo-conf)))
-                                           repos-config)]
-            (doseq [[repo-id repo] repos-config]
-              (let [repo-path (get repo-id->repo-path repo-id)]
-                (when (empty? (:dependencies repo))
-                  (print-warning ":dependencies is empty/missing. Skipping code generation."))
-                (doseq [[proto-dir] (:dependencies repo)]
-                  (verbose-prn "proto dir: %s" proto-dir)
-                  (let [proto-files (expand-dependencies protoc proto-paths
-                                                         (discover-files repo-path (str proto-dir)))]
-                    (verbose-prn "files: %s" (mapv #(.getName %) proto-files))
-                    (when (empty? proto-files)
-                      (print-warning "could not find any .proto files"))
-                    (doseq [proto-file proto-files]
-                      (let [protoc-opts (protoc-opts proto-paths
-                                                     output-path
-                                                     compile-grpc?
-                                                     grpc-plugin
-                                                     proto-file)]
-                        (println "compiling" (.getName proto-file) "...")
-                        (run-protoc-and-report! protoc protoc-opts)))))))))
-        (finally
-          (cleanup-dir! base-temp-path))))))
+      (verbose-prn "config: %s" config)
+      (validate-output-path output-path project)
+      (generate-files! parsed-args config))))
 
 (defn protodeps
   [project & [mode & args]]
