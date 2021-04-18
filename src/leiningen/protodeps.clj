@@ -286,7 +286,8 @@
         grpc-version    (:grpc-version config)
         grpc-release    (get-grpc-release grpc-version)
         base-temp-path  (create-temp-dir!)
-        ctx             {:base-temp-path base-temp-path}]
+        ctx             {:base-path base-temp-path}
+        keep-tmp?       (true? (:keep-tmp? args))]
     (try
       (verbose-prn "config: %s" config)
       (when-not proto-version
