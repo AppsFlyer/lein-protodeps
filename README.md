@@ -51,7 +51,7 @@ An example configuration:
                                                                [products/adrevenue]]}
 
                                    :some-other-schemas {:repo-type    :filesystem ;; read files directly from filesystem instead of git.
-                                                        :config       {:path "/home/ronen/Projects/af-proto"} ;; path
+                                                        :config       {:path "../schemas"} ;; path, either relative or absolute
                                                         :proto-paths  ["products"]
                                                         :dependencies [[products/foo]
                                                                        [products/bar]]}}}
