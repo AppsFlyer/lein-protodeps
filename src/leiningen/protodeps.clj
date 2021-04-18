@@ -265,7 +265,8 @@
 
 (defn- parse-args [args]
   (let [verbosely {:verbose true}
-        valid-args {:verbose verbosely :-v verbosely :--verbose verbosely}]
+        valid-args {:verbose verbosely :-v verbosely :--verbose verbosely
+                    :--keep-tmp-dir {:keep-tmp? true}}]
     (loop [sargs    (vec (set args))
            args-res {}]
       (if (empty? sargs)
@@ -336,7 +337,9 @@
                       (println "compiling" (.getName proto-file) "...")
                       (run-protoc-and-report! protoc protoc-opts)))))))))
       (finally
-        (cleanup-dir! base-temp-path)))))
+        (if keep-tmp?
+          (println "generated" base-temp-path)
+          (cleanup-dir! base-temp-path))))))
 
 (defmethod run-prototool! :generate [_mode args project]
   (let [parsed-args     (parse-args args)
