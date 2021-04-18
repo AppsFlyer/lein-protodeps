@@ -264,14 +264,14 @@
       true          (conj (.getAbsolutePath proto-file)))))
 
 (defn- parse-args [args]
-  (let [valid-args {"verbose" {:verbose true}
-                    :verbose  {:verbose true}}]
+  (let [verbosely {:verbose true}
+        valid-args {:verbose verbosely :-v verbosely :--verbose verbosely}]
     (loop [sargs    (vec (set args))
            args-res {}]
       (if (empty? sargs)
         args-res
         (let [arg (first sargs)]
-          (recur (rest sargs) (merge args-res (get valid-args arg))))))))
+          (recur (rest sargs) (merge args-res (get valid-args (keyword arg)))))))))
 
 
 (defn generate-files! [args config]
