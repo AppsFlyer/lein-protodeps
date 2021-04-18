@@ -23,6 +23,9 @@
   (binding [*out* *err*]
     (apply println s)))
 
+(defn print-warning [& s]
+  (apply print-err "protodeps: WARNING:" s))
+
 (defn append-dir [parent & children]
   (strings/join File/separator (concat [parent] children)))
 
@@ -38,12 +41,14 @@
        (Files/createTempDirectory base-path nil file-attrs)
        (Files/createTempDirectory nil file-attrs)))))
 
-(defn clone! [base-path repo-config]
+(defn clone! [repo-name base-path repo-config]
   (let [git-config (:config repo-config)
         path       (str (create-temp-dir! base-path))
         repo-url   (:clone-url git-config)
         rev        (:rev git-config)]
-    (println "cloning" repo-url "at rev" rev "...")
+    (println "cloning" repo-name "at rev" rev "...")
+    (when-not rev
+      (print-warning ":rev is not set for" repo-name ", consider setting a git tag or commit hash"))
     (let [repo (case (:auth-method git-config :ssh)
                  :ssh  (git/git-clone repo-url :dir (str path))
                  :http (let [user     (lookup (:user git-config))
@@ -60,7 +65,7 @@
 (defmulti resolve-repo (fn [_ctx repo-config] (:repo-type repo-config)))
 
 (defmethod resolve-repo :git [ctx repo-config]
-  (clone! (:base-path ctx) repo-config))
+  (clone! (:repo-name ctx) (:base-path ctx) repo-config))
 
 (defmethod resolve-repo :filesystem [_ repo-config]
   (some-> repo-config :config :path io/file .getAbsolutePath))
@@ -221,9 +226,6 @@
                      (not (some #(Files/isSameFile (.toPath ^File %) (.toPath afile)) seen-files)))
                    deps)))))))
 
-(defn print-warning [& s]
-  (apply print-err "protodeps: WARNING:" s))
-
 (defn strip-suffix [suffix s]
   (if (strings/ends-with? s suffix)
     (subs s 0 (- (count s) (count suffix)))
@@ -305,16 +307,18 @@
           (set-protoc-permissions! grpc-plugin))
         (mkdir! output-path)
         (verbose-prn "output-path: %s" output-path)
-        (let [repo-id->repo-path (zipmap (keys repos-config)
-                                         (map #(resolve-repo ctx %) (vals repos-config)))
+        (let [repo-id->repo-path (into {}
+                                       (map
+                                         (fn [[k v]]
+                                           (let [ctx (assoc ctx :repo-name k)]
+                                             [k (resolve-repo ctx v)])))
+                                       repos-config)
               proto-paths        (mapcat (fn [[repo-id repo-conf]]
                                            (map #(append-dir (get repo-id->repo-path repo-id) %)
                                                 (:proto-paths repo-conf)))
                                          repos-config)]
           (doseq [[repo-id repo] repos-config]
             (let [repo-path (get repo-id->repo-path repo-id)]
-              (when (empty? (:dependencies repo))
-                (print-warning ":dependencies is empty/missing. Skipping code generation."))
               (doseq [[proto-dir] (:dependencies repo)]
                 (verbose-prn "proto dir: %s" proto-dir)
                 (let [proto-files (expand-dependencies protoc proto-paths
