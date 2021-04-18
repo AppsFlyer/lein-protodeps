@@ -1,0 +1,6 @@
+syntax = "proto3";
+package dir3.v1;
+
+message Proto3 {
+  int32 id = 1;
+}

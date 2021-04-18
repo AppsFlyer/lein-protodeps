@@ -9,12 +9,16 @@
     (try
       (let [config {:output-path (str tmp-dir)
                     :proto-version "3.11.3"
-                    :repos '{:test {:repo-type :filesystem
-                                    :config {:path "resources/proto_repo"}
-                                    :proto-paths ["protos"]
-                                    :dependencies [[protos/dir1]]}}}]
+                    :repos '{:repo1 {:repo-type :filesystem
+                                     :config {:path "./resources/test/proto_repo"}
+                                     :proto-paths ["protos"]
+                                     :dependencies [[protos/dir1]]}
+                             ;; external dependency repo, no direct schemas to compile
+                             :repo2 {:repo-type :filesystem
+                                     :config {:path "./resources/test/proto_repo2"}
+                                     :proto-paths ["protos"]}}}]
         (sut/generate-files! {} config)
-        (is (= #{"dir1/v1/File1.java" "dir2/v1/File2.java"} 
+        (is (= #{"dir1/v1/File1.java" "dir2/v1/File2.java" "dir3/v1/File3.java"}
                (->> (.toFile tmp-dir)
                     file-seq
                     (filter #(not (.isDirectory ^File %)))

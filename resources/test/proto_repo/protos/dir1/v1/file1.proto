@@ -1,8 +1,13 @@
 syntax = "proto3";
 package dir1.v1;
 
+// internal repo dependency
 import "dir2/v1/file2.proto";
+
+// external repo dependency
+import "dir3/v1/file3.proto";
 
 message Proto1 {
   dir2.v1.Proto2 proto2 = 1;
+  dir3.v1.Proto3 proto3 = 2;
 }

@@ -333,7 +333,7 @@
       (finally
         (cleanup-dir! base-temp-path)))))
 
-(defmethod run-prototool! :generate [mode args project]
+(defmethod run-prototool! :generate [_mode args project]
   (let [parsed-args     (parse-args args)
         config          (:lein-protodeps project)
         output-path     (:output-path config)]
