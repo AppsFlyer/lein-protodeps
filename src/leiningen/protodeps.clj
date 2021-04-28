@@ -41,6 +41,19 @@
        (Files/createTempDirectory base-path nil file-attrs)
        (Files/createTempDirectory nil file-attrs)))))
 
+
+(defn- sha? [s]
+  (re-matches #"^[A-Za-z0-9]{40}$" s))
+
+(defn- git-clone! [repo-url dir rev]
+  ;; TODO: we can speed this up by using shallow clones, but JGit doesn't support it yet
+  (let [dir (str dir)]
+    (if (sha? rev)
+      (let [repo (git/git-clone repo-url :dir dir :clone-all? false)]
+        (checkout! repo rev))
+      (git/git-clone repo-url :dir dir :branch rev :clone-all? false))))
+
+
 (defn clone! [repo-name base-path repo-config]
   (let [git-config (:config repo-config)
         path       (str (create-temp-dir! base-path))
@@ -48,18 +61,17 @@
         rev        (:rev git-config)]
     (println "cloning" repo-name "at rev" rev "...")
     (when-not rev
-      (print-warning ":rev is not set for" repo-name ", consider setting a git tag or commit hash"))
-    (let [repo (case (:auth-method git-config :ssh)
-                 :ssh  (git/git-clone repo-url :dir (str path))
-                 :http (let [user     (lookup (:user git-config))
-                             password (lookup (:password git-config))]
-                         (if (or user password)
-                           (git/with-credentials {:login (lookup (:user git-config))
-                                                  :pw    (lookup (:password git-config))}
-                             (git/git-clone repo-url :dir (str path)))
-                           (git/git-clone repo-url :dir (str path)))))]
-      (checkout! repo rev)
-      path)))
+      (throw  (ex-info (str ":rev is not set for " repo-name ", set a git tag/branch name/commit hash") {})))
+    (case (:auth-method git-config :ssh)
+      :ssh  (git-clone! repo-url path rev)
+      :http (let [user     (lookup (:user git-config))
+                  password (lookup (:password git-config))]
+              (if (or user password)
+                (git/with-credentials {:login (lookup (:user git-config))
+                                       :pw    (lookup (:password git-config))}
+                  (git-clone! repo-url path rev))
+                (git-clone! repo-url path rev))))
+    path))
 
 
 (defmulti resolve-repo (fn [_ctx repo-config] (:repo-type repo-config)))
@@ -247,15 +259,6 @@
     (.delete ^File file)))
 
 
-(defn validate-repos-config! [repos-config]
-  ;; TODO: yeah...
-  repos-config)
-
-;; TODO: remove?
-(defn parse-repos-config [repos-config]
-  (let [repos-config (validate-repos-config! repos-config)]
-    repos-config))
-
 (defn protoc-opts [proto-paths output-path compile-grpc? grpc-plugin ^File proto-file]
   (let [protoc-opts (with-proto-paths [(long-opt "java_out" output-path)] proto-paths)]
     (cond-> protoc-opts
@@ -277,7 +280,7 @@
 
 (defn generate-files! [args config]
   (let [home-dir        (init-rc-dir!)
-        repos-config    (parse-repos-config (:repos config))
+        repos-config    (:repos config)
         output-path     (:output-path config)
         proto-version   (:proto-version config)
         protoc-installs (append-dir home-dir protoc-install-dir)
