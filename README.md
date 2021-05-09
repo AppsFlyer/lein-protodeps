@@ -38,9 +38,7 @@ An example configuration:
                                                 :config   {:clone-url   "git@localhost:test/repo.git" ;; url to clone from
                                                            ;; rev - can point to a commit hash, tag name or branch name. The repo will be cloned
                                                            ;; to this version of itself. If unspecified, will point to origin's HEAD (i.e, master).
-                                                           :rev         "origin/mybranch"
-                                                           ;; authentication method - can be either :ssh or :http. Defauls to ssh if unspecified.
-                                                           :auth-method :ssh}
+                                                           :rev         "mybranch"}
                                                 ;; a vector of proto-paths relative to the directory root. May use an empty string if the root
                                                 ;; level is a proto path in itself.
                                                 :proto-paths ["products"]
@@ -66,24 +64,6 @@ To enable cross-repo compilation, simply add both repos to the `:repos` config m
 
 ## Git HTTP authentication
 
-Often, when working locally, you will probably want to use SSH when cloning from Git. However, this may not be possible in all environments, such as
-when building your project in your CI/CD pipeline.
+To use HTTP authentication using username and password, provide them in the clone url: `"https://myuser:mypass@***REMOVED***/DataInfra/af-proto.git"`
 
-To use HTTP authentication for cloning git repositories, use `:auth-method :http` and specify `:user` and `:password` keys in the repo's config map.
-These keys can be hardcoded strings or point to an environment variable via `:env/ENV_VAR_NAME`.
-
-To allow this, you may override a specific repo's configuration in a separate profile. For example, using the previous example:
-
-```clj
-
-(defproject my-cool-project "0.1.0"
- ...
- :profiles {:build {:lein-protodeps {:repos
-                                      {:af-schemas
-                                       {:config {:auth-method :http ;; switch to HTTP auth
-                                                 ;; change the URL to use HTTP:
-                                                 :clone-url   "https://***REMOVED***/DataInfra/af-proto.git"
-                                                 ;; read credentials off the environment:
-                                                 :user        :env/GITLAB_USER
-                                                 :password    :env/GITLAB_PASSWORD}}}}}}
-```                                                    
+It is recommended to use environment variables rather than hardcoding them in plaintext. Environment variables are accessible via the `${:env/<var_name>}` interpolation syntax, which allows us to write the former as: `"https://${:env/GIT_USERNAME}:${:env/GIT_PASSWORD}@***REMOVED***/DataInfra/af-proto.git"`.

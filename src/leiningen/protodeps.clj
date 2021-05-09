@@ -1,8 +1,8 @@
 (ns leiningen.protodeps
-  (:require [clj-jgit.porcelain :as git]
-            [clojure.java.io :as io]
+  (:require [clojure.java.io :as io]
             [clojure.string :as strings]
-            [clojure.java.shell :as sh])
+            [clojure.java.shell :as sh]
+            [clojure.set :as sets])
   (:import [java.io File]
            [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]
@@ -14,10 +14,6 @@
   (when *verbose?*
     (println "protodeps:" (apply format msg args))))
 
-(defn- lookup [k]
-  (if (and (keyword? k) (= "env" (namespace k)))
-    (System/getenv (name k))
-    k))
 
 (defn print-err [& s]
   (binding [*out* *err*]
@@ -29,9 +25,6 @@
 (defn append-dir [parent & children]
   (strings/join File/separator (concat [parent] children)))
 
-(defn checkout! [git-repo tag-or-sha]
-  (when tag-or-sha
-    (git/git-checkout git-repo :name tag-or-sha)))
 
 (defn create-temp-dir!
   ([] (create-temp-dir! nil))
@@ -42,16 +35,40 @@
        (Files/createTempDirectory nil file-attrs)))))
 
 
+(defn- interpolate [m s]
+  (reduce
+    (fn [s [k v]]
+      (strings/replace s (format "${%s}" (str k)) (str v)))
+    s
+    m))
+
+
+(defn run-sh!
+  ([cmd opts] (run-sh! cmd opts nil))
+  ([cmd opts m]
+   (verbose-prn (str "running " cmd " with opts: %s") opts)
+   (let [{:keys [exit] :as r} (apply sh/sh cmd (map (partial interpolate m) opts))]
+     (if (= 0 exit)
+       r
+       (throw (ex-info (str cmd " failed") r))))))
+
+
 (defn- sha? [s]
   (re-matches #"^[A-Za-z0-9]{40}$" s))
 
+
 (defn- git-clone! [repo-url dir rev]
-  ;; TODO: we can speed this up by using shallow clones, but JGit doesn't support it yet
-  (let [dir (str dir)]
+  (let [dir  (str dir)
+        conf (into {}
+                   (map
+                     (fn [[k v]]
+                       [(keyword "env" k) v]))
+                   (System/getenv))]
     (if (sha? rev)
-      (let [repo (git/git-clone repo-url :dir dir :clone-all? false)]
-        (checkout! repo rev))
-      (git/git-clone repo-url :dir dir :branch rev :clone-all? false))))
+      (do
+        (run-sh! "git" ["clone" repo-url dir] conf)
+        (run-sh! "git" ["-C" dir "checkout" rev]))
+      (run-sh! "git" ["clone" repo-url "--branch" rev "--single-branch" "--depth" "1" dir] conf))))
 
 
 (defn clone! [repo-name base-path repo-config]
@@ -62,15 +79,7 @@
     (println "cloning" repo-name "at rev" rev "...")
     (when-not rev
       (throw  (ex-info (str ":rev is not set for " repo-name ", set a git tag/branch name/commit hash") {})))
-    (case (:auth-method git-config :ssh)
-      :ssh  (git-clone! repo-url path rev)
-      :http (let [user     (lookup (:user git-config))
-                  password (lookup (:password git-config))]
-              (if (or user password)
-                (git/with-credentials {:login (lookup (:user git-config))
-                                       :pw    (lookup (:password git-config))}
-                  (git-clone! repo-url path rev))
-                (git-clone! repo-url path rev))))
+    (git-clone! repo-url path rev)
     path))
 
 
@@ -159,15 +168,8 @@
       (io/copy input-stream output-stream))))
 
 
-(defn run-protoc! [protoc-path opts]
-  (verbose-prn "running protoc with opts: %s" opts)
-  (let [{:keys [exit] :as r} (apply sh/sh protoc-path opts)]
-    (if (= 0 exit)
-      r
-      (throw (ex-info "protoc failed" r)))))
-
 (defn run-protoc-and-report! [protoc-path opts]
-  (let [{:keys [out err]} (run-protoc! protoc-path opts)]
+  (let [{:keys [out err]} (run-sh! protoc-path opts)]
     (when-not (strings/blank? err)
       (print-err err))
     (when-not (strings/blank? out)
@@ -217,12 +219,12 @@
 
 (defn get-file-dependencies [protoc-path proto-paths ^File proto-file]
   (map io/file
-       (re-seq #"[^\s]*\.proto" (:out (run-protoc! protoc-path
-                                                   (with-proto-paths
-                                                     [(long-opt "dependency_out" "/dev/stdout")
-                                                      "-o/dev/null"
-                                                      (.getAbsolutePath proto-file)]
-                                                     proto-paths))))))
+       (re-seq #"[^\s]*\.proto" (:out (run-sh! protoc-path
+                                               (with-proto-paths
+                                                 [(long-opt "dependency_out" "/dev/stdout")
+                                                  "-o/dev/null"
+                                                  (.getAbsolutePath proto-file)]
+                                                 proto-paths))))))
 
 (defn expand-dependencies [protoc-path proto-paths proto-files]
   (loop [seen-files (set proto-files)
@@ -278,67 +280,79 @@
           (recur (rest sargs) (merge args-res (get valid-args (keyword arg)))))))))
 
 
-(defn generate-files! [args config]
-  (let [home-dir        (init-rc-dir!)
-        repos-config    (:repos config)
-        output-path     (:output-path config)
-        proto-version   (:proto-version config)
-        protoc-installs (append-dir home-dir protoc-install-dir)
-        protoc-release  (get-protoc-release proto-version)
-        compile-grpc?   (:compile-grpc? config)
+(defn- get-protoc! [home-dir config]
+  (let [proto-version (:proto-version config)]
+    (when-not proto-version
+      (throw (ex-info "proto version not defined" {})))
+    (let [protoc-installs (append-dir home-dir protoc-install-dir)
+          protoc-release  (get-protoc-release proto-version)
+          protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
+      (when-not (.exists ^File (io/file protoc))
+        (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
+        (set-protoc-permissions! protoc))
+      protoc)))
+
+
+(defn- get-grpc-plugin! [home-dir config]
+  (let [grpc-version    (:grpc-version config)
         grpc-installs   (append-dir home-dir grpc-install-dir)
-        grpc-version    (:grpc-version config)
-        grpc-release    (get-grpc-release grpc-version)
-        base-temp-path  (create-temp-dir!)
-        ctx             {:base-path base-temp-path}
-        keep-tmp?       (true? (:keep-tmp? args))]
+        grpc-plugin-dir (append-dir grpc-installs grpc-version)
+        grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)
+        grpc-release    (get-grpc-release grpc-version)]
+    (when (:compile-grpc? config)
+      (when (not (.exists ^File (io/file grpc-plugin)))
+        (when-not (.mkdirs (io/file grpc-plugin-dir))
+          (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
+        (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
+        (set-protoc-permissions! grpc-plugin))
+      grpc-plugin)))
+
+
+(defn generate-files! [args config]
+  (let [home-dir           (init-rc-dir!)
+        repos-config       (:repos config)
+        output-path        (:output-path config)
+        base-temp-path     (create-temp-dir!)
+        ctx                {:base-path base-temp-path}
+        keep-tmp?          (true? (:keep-tmp? args))
+        protoc             (get-protoc! home-dir config)
+        grpc-plugin        (get-grpc-plugin! home-dir config)
+        repo-id->repo-path (into {}
+                                 (map
+                                  (fn [[k v]]
+                                    (let [ctx (assoc ctx :repo-name k)]
+                                      [k (resolve-repo ctx v)])))
+                                 repos-config)
+        proto-paths        (mapcat (fn [[repo-id repo-conf]]
+                                     (map #(append-dir (get repo-id->repo-path repo-id) %)
+                                          (:proto-paths repo-conf)))
+                                   repos-config)]
     (try
+      (mkdir! output-path)
       (verbose-prn "config: %s" config)
-      (when-not proto-version
-        (throw (ex-info "proto version not defined" {})))
-      (let [protoc          (append-dir protoc-installs protoc-release "bin" "protoc")
-            grpc-plugin-dir (append-dir grpc-installs grpc-version)
-            grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
-        (verbose-prn "paths: %s" {:protoc          protoc
-                                  :grpc-plugin-dir grpc-plugin-dir
-                                  :grpc-plugin     grpc-plugin})
-        (when-not (.exists ^File (io/file protoc))
-          (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
-          (set-protoc-permissions! protoc))
-        (when (and compile-grpc? (not (.exists ^File (io/file grpc-plugin))))
-          (when-not (.mkdirs (io/file grpc-plugin-dir))
-            (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
-          (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
-          (set-protoc-permissions! grpc-plugin))
-        (mkdir! output-path)
-        (verbose-prn "output-path: %s" output-path)
-        (let [repo-id->repo-path (into {}
-                                       (map
-                                         (fn [[k v]]
-                                           (let [ctx (assoc ctx :repo-name k)]
-                                             [k (resolve-repo ctx v)])))
-                                       repos-config)
-              proto-paths        (mapcat (fn [[repo-id repo-conf]]
-                                           (map #(append-dir (get repo-id->repo-path repo-id) %)
-                                                (:proto-paths repo-conf)))
-                                         repos-config)]
-          (doseq [[repo-id repo] repos-config]
-            (let [repo-path (get repo-id->repo-path repo-id)]
-              (doseq [[proto-dir] (:dependencies repo)]
-                (verbose-prn "proto dir: %s" proto-dir)
-                (let [proto-files (expand-dependencies protoc proto-paths
-                                                       (discover-files repo-path (str proto-dir)))]
-                  (verbose-prn "files: %s" (mapv #(.getName %) proto-files))
-                  (when (empty? proto-files)
-                    (print-warning "could not find any .proto files"))
-                  (doseq [proto-file proto-files]
-                    (let [protoc-opts (protoc-opts proto-paths
-                                                   output-path
-                                                   compile-grpc?
-                                                   grpc-plugin
-                                                   proto-file)]
-                      (println "compiling" (.getName proto-file) "...")
-                      (run-protoc-and-report! protoc protoc-opts)))))))))
+      (verbose-prn "paths: %s" {:protoc      protoc
+                                :grpc-plugin grpc-plugin})
+      (verbose-prn "output-path: %s" output-path)
+      (doseq [[repo-id repo] repos-config]
+        (let [repo-path   (get repo-id->repo-path repo-id)
+              proto-files (transduce (map
+                                      (fn [[proto-dir]]
+                                        (expand-dependencies protoc proto-paths
+                                                             (discover-files repo-path (str proto-dir)))))
+                                     sets/union
+                                     (:dependencies repo))]
+          (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
+          (when (empty? proto-files)
+            (print-warning "could not find any .proto files"))
+          (doseq [proto-file proto-files]
+            (let [protoc-opts (protoc-opts proto-paths
+                                           output-path
+                                           (:compile-grpc? config)
+                                           grpc-plugin
+                                           proto-file)]
+              (println "compiling" (.getName proto-file) "...")
+              (run-protoc-and-report! protoc protoc-opts)))))
+
       (finally
         (if keep-tmp?
           (println "generated" base-temp-path)
@@ -368,6 +382,5 @@
                                 {:repo-type    :git
                                  :proto-paths  ["products"]
                                  :config       {:clone-url   "git@localhost:test/repo.git"
-                                                :rev         "origin/mybranch"
-                                                :auth-method :ssh}
+                                                :rev         "origin/mybranch"}
                                  :dependencies [[products/events]]}}}))
