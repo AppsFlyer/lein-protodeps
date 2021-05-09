@@ -12,7 +12,7 @@
                     :repos '{:repo1 {:repo-type :filesystem
                                      :config {:path "./resources/test/proto_repo"}
                                      :proto-paths ["protos"]
-                                     :dependencies [[protos/dir1]]}
+                                     :dependencies [protos/dir1]}
                              ;; external dependency repo, no direct schemas to compile
                              :repo2 {:repo-type :filesystem
                                      :config {:path "./resources/test/proto_repo2"}
