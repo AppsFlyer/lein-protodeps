@@ -13,5 +13,4 @@
                                        :password      :***REMOVED***
                                        :sign-releases false}]]
   :repositories [["jitpack.io" "https://jitpack.io"]]
-  :dependencies [[clj-jgit "1.0.1"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]]}})
