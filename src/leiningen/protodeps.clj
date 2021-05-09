@@ -219,12 +219,13 @@
 
 (defn get-file-dependencies [protoc-path proto-paths ^File proto-file]
   (map io/file
-       (re-seq #"[^\s]*\.proto" (:out (run-sh! protoc-path
-                                               (with-proto-paths
-                                                 [(long-opt "dependency_out" "/dev/stdout")
-                                                  "-o/dev/null"
-                                                  (.getAbsolutePath proto-file)]
-                                                 proto-paths))))))
+       (re-seq #"[^\s]*\.proto" (:out
+                                 (run-sh! protoc-path
+                                          (with-proto-paths
+                                            [(long-opt "dependency_out" "/dev/stdout")
+                                             "-o/dev/null"
+                                             (.getAbsolutePath proto-file)]
+                                            proto-paths))))))
 
 (defn expand-dependencies [protoc-path proto-paths proto-files]
   (loop [seen-files (set proto-files)
@@ -336,9 +337,14 @@
       (doseq [[repo-id repo] repos-config]
         (let [repo-path   (get repo-id->repo-path repo-id)
               proto-files (transduce (map
-                                      (fn [[proto-dir]]
-                                        (expand-dependencies protoc proto-paths
-                                                             (discover-files repo-path (str proto-dir)))))
+                                       ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
+                                       ;; as part of the `:dependencies` vector.
+                                       (fn [proto-dir-or-vec]
+                                         (let [proto-dir (if (vector? proto-dir-or-vec)
+                                                           (first proto-dir-or-vec)
+                                                           proto-dir-or-vec)]
+                                           (expand-dependencies protoc proto-paths
+                                                                (discover-files repo-path (str proto-dir))))))
                                      sets/union
                                      (:dependencies repo))]
           (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
@@ -376,11 +382,9 @@
                 :proto-version "3.12.4"
                 :grpc-version  "1.30.2"
                 :compile-grpc? true
-                :repos         {:af-proto #_ {:repo-type    :filesystem
-                                              :config       {:path "/home/ronen/Projects/af-proto"}
-                                              :dependencies [{:proto-path "products" :proto-dir "events"}]}
+                :repos         {:af-proto
                                 {:repo-type    :git
                                  :proto-paths  ["products"]
                                  :config       {:clone-url   "git@localhost:test/repo.git"
-                                                :rev         "origin/mybranch"}
-                                 :dependencies [[products/events]]}}}))
+                                                :rev         "mybranch"}
+                                 :dependencies [products/events]}}}))

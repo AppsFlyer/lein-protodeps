@@ -45,14 +45,14 @@ An example configuration:
                                                 ;; a vector of dependencies which control what stubs to compile. Each dependency vector
                                                 ;; contains a directory under one of the proto paths. All files in this directory and their
                                                 ;; dependencies will be compiled.
-                                                :dependencies [[products/events]
-                                                               [products/adrevenue]]}
+                                                :dependencies [products/events
+                                                               products/adrevenue]}
 
                                    :some-other-schemas {:repo-type    :filesystem ;; read files directly from filesystem instead of git.
                                                         :config       {:path "../schemas"} ;; path, either relative or absolute
                                                         :proto-paths  ["products"]
-                                                        :dependencies [[products/foo]
-                                                                       [products/bar]]}}}
+                                                        :dependencies [products/foo
+                                                                       products/bar]}}}
 ```
 
 ## Cross-repository compilation
@@ -66,4 +66,4 @@ To enable cross-repo compilation, simply add both repos to the `:repos` config m
 
 To use HTTP authentication using username and password, provide them in the clone url: `"https://myuser:mypass@***REMOVED***/DataInfra/af-proto.git"`
 
-It is recommended to use environment variables rather than hardcoding them in plaintext. Environment variables are accessible via the `${:env/<var_name>}` interpolation syntax, which allows us to write the former as: `"https://${:env/GIT_USERNAME}:${:env/GIT_PASSWORD}@***REMOVED***/DataInfra/af-proto.git"`.
+It is recommended to use environment variables rather than hardcoding their values in plaintext. Environment variables are accessible via the `${:env/<var_name>}` interpolation syntax, which allows us to write the former as: `"https://${:env/GIT_USERNAME}:${:env/GIT_PASSWORD}@***REMOVED***/DataInfra/af-proto.git"`.
