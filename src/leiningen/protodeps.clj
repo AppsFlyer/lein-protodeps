@@ -205,10 +205,6 @@
     (file-seq (io/file (append-dir git-repo-path dep-path)))))
 
 
-(defmulti run-prototool! (fn [mode _args _project] mode))
-
-(defmethod run-prototool! :default [mode _ _] (throw (ex-info "unknown command" {:command mode})))
-
 (defn long-opt [k v]
   (str "--" k "=" v))
 
@@ -364,7 +360,9 @@
           (println "generated" base-temp-path)
           (cleanup-dir! base-temp-path))))))
 
-(defmethod run-prototool! :generate [_mode args project]
+(defn generate-files*!
+  "Generate protoc & gRPC stubs according to the `:lein-protodeps` configuration in `project.clj`"
+  [args project]
   (let [parsed-args     (parse-args args)
         config          (:lein-protodeps project)
         output-path     (:output-path config)]
@@ -374,8 +372,17 @@
       (generate-files! parsed-args config))))
 
 (defn protodeps
+  "Automate protobuf dependency management
+  -v, --verbose
+       Produce verbose output
+  --keep-tmp-dir
+       Don't remove the temp dir used to clone repos and print its path before finishing
+  "
+  {:subtasks [#'generate-files*!]}
   [project & [mode & args]]
-  (run-prototool! (keyword mode) args project))
+  (case mode
+    "generate" (generate-files*! args project)
+    (leiningen.core.main/warn "Unknown task")))
 
 (comment
   (def config '{:output-path   "src/java/generated"
