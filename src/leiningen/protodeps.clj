@@ -191,7 +191,7 @@
 (def ^:private grpc-install-dir "grpc-installations")
 
 (defn init-rc-dir! []
-  (let [home (append-dir (get-prop "user.home") ".lein-prototool")]
+  (let [home (append-dir (get-prop "user.home") ".lein-protodeps")]
     (mkdir! home)
     (mkdir! (append-dir home protoc-install-dir))
     (mkdir! (append-dir home grpc-install-dir))

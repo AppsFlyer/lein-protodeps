@@ -12,7 +12,7 @@ are not already installed.
 
 ## Usage
 
-Put `[lein-protodeps "0.1.17"]` into the `:plugins` vector of your project.clj.
+Put `[com.appsflyer/lein-protodeps "1.0.1"]` into the `:plugins` vector of your project.clj.
 
 Once installed, run `lein protodeps generate` to run the plugin.
 
@@ -64,6 +64,6 @@ To enable cross-repo compilation, simply add both repos to the `:repos` config m
 
 ## Git HTTP authentication
 
-To use HTTP authentication using username and password, provide them in the clone url: `"https://myuser:mypass@***REMOVED***/DataInfra/af-proto.git"`
+To use HTTP authentication using username and password, provide them in the clone url: `"https://<myuser>:<mypass>@github.com/whatever/cool_repo.git"`
 
-It is recommended to use environment variables rather than hardcoding their values in plaintext. Environment variables are accessible via the `${:env/<var_name>}` interpolation syntax, which allows us to write the former as: `"https://${:env/GIT_USERNAME}:${:env/GIT_PASSWORD}@***REMOVED***/DataInfra/af-proto.git"`.
+It is recommended to use environment variables rather than hardcoding their values in plaintext. Environment variables are accessible via the `${:env/<var_name>}` interpolation syntax, which allows us to write the former as: `"https://${:env/GIT_USERNAME}:${:env/GIT_PASSWORD}@github.com/whatever/cool_repo.git"`.
