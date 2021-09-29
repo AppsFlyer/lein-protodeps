@@ -1,5 +1,7 @@
 # lein-protodeps
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.appsflyer/lein-protodeps.svg)](https://clojars.org/com.appsflyer/lein-protodeps)
+
 A Leiningen plugin to automate compilation of Protobuf and gRPC stubs.
 
 This plugin allows to define your project's protobuf dependencies, by stating

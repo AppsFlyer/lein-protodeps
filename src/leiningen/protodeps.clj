@@ -2,7 +2,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as strings]
             [clojure.java.shell :as sh]
-            [clojure.set :as sets])
+            [clojure.set :as sets]
+            [leiningen.core.main :as lein])
   (:import [java.io File]
            [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]
@@ -382,7 +383,7 @@
   [project & [mode & args]]
   (case mode
     "generate" (generate-files*! args project)
-    (leiningen.core.main/warn "Unknown task")))
+    (lein/warn "Unknown task")))
 
 (comment
   (def config '{:output-path   "src/java/generated"
