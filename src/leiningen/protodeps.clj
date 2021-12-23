@@ -116,33 +116,45 @@
       (recur))))
 
 (def os-name->os {"Linux" "linux" "Mac OS X" "osx"})
-(def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64"})
+(def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64" "aarch64" "aarch64"})
 
-(defn get-prop [prop-name]
-  (if-let [v (System/getProperty prop-name)]
+
+(defn get-prop [env prop-name]
+  (if-let [v (get env prop-name)]
     v
     (throw (ex-info "unknown prop" {:prop-name prop-name}))))
 
-(defn translate-prop [prop-map prop-name]
-  (let [v  (get-prop prop-name)
-        v' (get prop-map v)]
-    (when-not v'
-      (throw (ex-info "unknown property value" {:prop-name prop-name :prop-value v})))
-    v'))
 
-(defn- get-protoc-release [protoc-version]
-  (strings/join "-" ["protoc" protoc-version
-                     (translate-prop os-name->os "os.name")
-                     (translate-prop os-arch->arch "os.arch")]))
+;; osx/aarch64 release is unavailable yet, therefore we fall back to x86_64
+(def ^:private platform-alternatives {{:os-name "osx" :os-arch "aarch64"}
+                                      {:os-name "osx" :os-arch "x86_64"}})
+
+
+(defn- get-platform [env]
+  (let [raw-os-name (get env "os.name")
+        raw-os-arch (get env "os.arch")
+        os-name     (get os-name->os raw-os-name)
+        os-arch     (get os-arch->arch raw-os-arch)
+        platform    {:os-name os-name :os-arch os-arch}]
+    (when (or (nil? os-arch) (nil? os-name))
+      (throw (ex-info
+               "\nPlatform is not currently supported.\n
+Please open an issue at https://github.com/AppsFlyer/lein-protodeps/issues
+and include this full error message to add support for your platform."
+                      {:os.name raw-os-name :os.arch raw-os-arch})))
+    (get platform-alternatives platform platform)))
+
+(defn- get-protoc-release [protoc-version {:keys [os-name os-arch]}]
+  (strings/join "-" ["protoc" protoc-version os-name os-arch]))
 
 (def ^:private grpc-plugin-executable-name "protoc-gen-grpc-java")
 
-(defn- get-grpc-release [grpc-version]
+(defn- get-grpc-release [grpc-version {:keys [os-name os-arch]}]
   (str
     (strings/join "-" [grpc-plugin-executable-name
                        grpc-version
-                       (translate-prop os-name->os "os.name")
-                       (translate-prop os-arch->arch "os.arch")])
+                       os-name
+                       os-arch])
     ".exe"))
 
 (defn set-protoc-permissions! [protoc-path]
@@ -192,7 +204,7 @@
 (def ^:private grpc-install-dir "grpc-installations")
 
 (defn init-rc-dir! []
-  (let [home (append-dir (get-prop "user.home") ".lein-protodeps")]
+  (let [home (append-dir (get-prop (System/getProperties) "user.home") ".lein-protodeps")]
     (mkdir! home)
     (mkdir! (append-dir home protoc-install-dir))
     (mkdir! (append-dir home grpc-install-dir))
@@ -278,12 +290,12 @@
           (recur (rest sargs) (merge args-res (get valid-args (keyword arg)))))))))
 
 
-(defn- get-protoc! [home-dir config]
+(defn- get-protoc! [home-dir config release-platform]
   (let [proto-version (:proto-version config)]
     (when-not proto-version
       (throw (ex-info "proto version not defined" {})))
     (let [protoc-installs (append-dir home-dir protoc-install-dir)
-          protoc-release  (get-protoc-release proto-version)
+          protoc-release  (get-protoc-release proto-version release-platform)
           protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
       (when-not (.exists ^File (io/file protoc))
         (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
@@ -291,12 +303,12 @@
       protoc)))
 
 
-(defn- get-grpc-plugin! [home-dir config]
+(defn- get-grpc-plugin! [home-dir config release-platform]
   (let [grpc-version    (:grpc-version config)
         grpc-installs   (append-dir home-dir grpc-install-dir)
         grpc-plugin-dir (append-dir grpc-installs grpc-version)
-        grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)
-        grpc-release    (get-grpc-release grpc-version)]
+        grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)      
+        grpc-release    (get-grpc-release grpc-version release-platform)]
     (when (:compile-grpc? config)
       (when (not (.exists ^File (io/file grpc-plugin)))
         (when-not (.mkdirs (io/file grpc-plugin-dir))
@@ -313,8 +325,10 @@
         base-temp-path     (create-temp-dir!)
         ctx                {:base-path base-temp-path}
         keep-tmp?          (true? (:keep-tmp? args))
-        protoc             (get-protoc! home-dir config)
-        grpc-plugin        (get-grpc-plugin! home-dir config)
+        env                (System/getProperties)
+        release-platform   (get-platform env)
+        protoc             (get-protoc! home-dir config release-platform)
+        grpc-plugin        (get-grpc-plugin! home-dir config release-platform)
         repo-id->repo-path (into {}
                                  (map
                                   (fn [[k v]]
