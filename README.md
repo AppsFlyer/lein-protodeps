@@ -14,7 +14,7 @@ are not already installed.
 
 ## Usage
 
-Put `[com.appsflyer/lein-protodeps "1.0.2"]` into the `:plugins` vector of your project.clj.
+Put `[com.appsflyer/lein-protodeps "1.0.3"]` into the `:plugins` vector of your project.clj.
 
 Once installed, run `lein protodeps generate` to run the plugin.
 
