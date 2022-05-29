@@ -12,6 +12,22 @@ using the correct protoc compiler and gRPC plugin, according to the versions spe
 in your project's configuration. The plugin will automatically download the correct versions if they
 are not already installed.
 
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+**Table of Contents**
+
+- [Usage](#usage)
+- [Cross-repository compilation](#cross-repository-compilation)
+- [Git HTTP authentication](#git-http-authentication)
+- [protoc and gRPC binaries retrieval](#protoc-and-grpc-binaries-retrieval)
+- [Configuration Reference](#configuration-reference)
+    - [Plugin options](#plugin-configuration-options)
+    - [Repo Options](#repo-options)
+    - [Proto options](#proto-options)
+
+<!-- markdown-toc end -->
+
+
+
 ## Usage
 
 Put `[com.appsflyer/lein-protodeps "1.0.3"]` into the `:plugins` vector of your project.clj.
@@ -69,3 +85,54 @@ To enable cross-repo compilation, simply add both repos to the `:repos` config m
 To use HTTP authentication using username and password, provide them in the clone url: `"https://<myuser>:<mypass>@github.com/whatever/cool_repo.git"`
 
 It is recommended to use environment variables rather than hardcoding their values in plaintext. Environment variables are accessible via the `${:env/<var_name>}` interpolation syntax, which allows us to write the former as: `"https://${:env/GIT_USERNAME}:${:env/GIT_PASSWORD}@github.com/whatever/cool_repo.git"`.
+
+## protoc and gRPC binaries retrieval
+
+The plugin will download the protoc and gRPC plugin binaries according to the versions set in `:proto-version` and `:grpc-version`, respectively, and install them under 
+`~/.lein-protodeps/`. 
+
+By default, the plugin will use `https://github.com/protocolbuffers/protobuf/releases/download/` for protoc and `https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/` for gRPC.
+However, it is possible to override these to other endpoints by setting `:protoc-zip-url-template` and `:grpc-exe-url-template` options in the plugin configuration.
+
+The values of these options are URL templates that will be interpolated at runtime with the following variables to produce download URLs:
+
+* `:os-name` host OS (i.e, `linux`, `osx`)
+* `:os-arch` host architecture (i.e, `x86_64`, `aarch64`)
+* `:semver` version string as defined in `:protoc-version` or `:grpc-version`
+* `:major` major part of `:semver`
+* `:minor` minor part of `:semver`
+* `:patch` patch part of `:semver`
+
+For example, to override the gRPC URL you may set `:grpc-exe-url-template` to `https://some-other-place.com/artifacts/grpc/${:semver}/protoc-gen-grpc-java-${:semver}-${:os-name}-${:os-arch}`. Note that
+currently this feature does not support any method of authentication, in case your endpoints require it.
+
+
+## Configuration Reference
+
+#### Plugin Configuration Options
+| Key                        | Type    | Req?     | Notes                                                                                                                                                    |
+|----------------------------|---------|----------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `:output-path`             | string  | required | Path to which to compile stubs. This usually needs to be under `:java-source-paths`                                                                      |
+| `:proto-version`           | string  | required | Version of protoc to use                                                                                                                                 |
+| `:grpc-version`            | string  | optional | Version of gRPC plugin to use. Required if `:compile-grpc?` is `true`                                                                                    |
+| `:compile-grpc?`           | boolean | optional | Whether to compile gRPC stubs. Defaults to `false`                                                                                                       |
+| `:protoc-zip-url-template` | string  | optional | URL template from which to retrieve protoc's zip release (if needed). See also [protoc and gRPC binaries retrieval](#protoc-and-grpc-binaries-retrieval) |
+| `:grpc-exe-url-template`  | string  | optional | URL template from which to retrieve gRPC's executable release (if needed). See also [protoc and gRPC binaries retrieval](#protoc-and-grpc-binaries-retrieval)   |
+
+
+#### Repo Options
+| Key                              | Type                 | Req?                            | Notes                                                                                                                                     |
+|----------------------------------|----------------------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| `<:repo-name>.:repo-type`        | `:git` `:filesystem` | required                        |                                                                                                                                           |
+| `<:repo-name>.:config.:clone-url` | string               | required (for git repos)        | Either SSH or HTTP endpoints are supported, see also [Git HTTP authentication](#git-http-authentication)                                  |
+| `<:repo-name>.:config.:rev`      | string               | optional (for git repos)        | commit hash/tag name/branch name. Not specifying a rev will default to cloning the main branch (it is generally encouraged to use a fixed version) |
+| `<:repo-name>.:config.:path`     | string               | required (for filesystem repos) | path to directory containing files (absolute or relative to project directory)                                                            |
+
+#### Proto options
+| Key                          | Type              | Req?     | Notes                                                                                                                                                                                                            |
+|------------------------------|-------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<:repo-name>.:proto-paths`  | vector of strings | required | Relative proto paths to the directory root (where `protoc` will search for imports, see `protoc --help` for more information)                                                                                    |
+| `<:repo-name>.:dependencies` | vector of symbols | optional | List of paths which contain files to compile to stubs. Each of these paths needs to be prefixed with one of the proto paths defined under `:proto-paths`, see [example](#usage) above. If unspecified or empty, nothing in this repo will be compiled, but it may still be used for finding imports required by other repos. See also [cross-repository compilation](#cross-repository-compilation)                |
+
+
+
