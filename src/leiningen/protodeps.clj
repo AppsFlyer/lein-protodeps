@@ -36,12 +36,32 @@
        (Files/createTempDirectory nil file-attrs)))))
 
 
+(defn- parse-semver [semver]
+  (when semver
+    (let [[major minor patch :as parts] (map #(Long/parseLong %)
+                                             (strings/split semver #"\."))]
+      (when-not (= (count parts) 3)
+        (throw (ex-info "invalid semver, expected major.minor.patch" {:version semver})))
+      {:major  major
+       :minor  minor
+       :patch  patch
+       :semver semver})))
+
+
 (defn- interpolate [m s]
   (reduce
     (fn [s [k v]]
       (strings/replace s (format "${%s}" (str k)) (str v)))
     s
     m))
+
+
+(defn mkdir! [dir-path]
+  (let [dir (io/file dir-path)]
+    (when-not (or (.exists dir)
+                  (.mkdirs dir))
+      (throw (ex-info "failed to create dir" {:dir dir-path})))
+    dir))
 
 
 (defn run-sh!
@@ -96,17 +116,18 @@
                         ^java.util.zip.ZipEntry entry
                         base-path]
   (let [file-name  (append-dir base-path (.getName entry))
-        size       (.getCompressedSize entry)
-        ^bytes buf (byte-array 1024)]
-    (if (zero? size)
-      (.mkdirs (io/file file-name))
-      (with-open [outp (io/output-stream file-name)]
-        (println "unzipping" file-name)
-        (loop []
-          (let [bytes-read (.read zinp buf)]
-            (when (pos? bytes-read)
-              (.write outp buf 0 bytes-read)
-              (recur))))))))
+        ^File file (io/file file-name)
+        size       (.getCompressedSize entry)]
+    (when (pos? size)
+      (let [^bytes buf (byte-array 1024) ^File parent-file (.getParentFile file)]
+        (mkdir! (.getAbsolutePath parent-file))
+        (with-open [outp (io/output-stream file-name)]
+          (println "unzipping" file-name)
+          (loop []
+            (let [bytes-read (.read zinp buf)]
+              (when (pos? bytes-read)
+                (.write outp buf 0 bytes-read)
+                (recur)))))))))
 
 (defn unzip! [^java.util.zip.ZipInputStream zinp dst]
   (loop []
@@ -144,18 +165,11 @@ and include this full error message to add support for your platform."
                       {:os.name raw-os-name :os.arch raw-os-arch})))
     (get platform-alternatives platform platform)))
 
-(defn- get-protoc-release [protoc-version {:keys [os-name os-arch]}]
-  (strings/join "-" ["protoc" protoc-version os-name os-arch]))
+(defn- get-protoc-release [{:keys [semver os-name os-arch]}]
+  (strings/join "-" ["protoc" semver os-name os-arch]))
 
 (def ^:private grpc-plugin-executable-name "protoc-gen-grpc-java")
 
-(defn- get-grpc-release [grpc-version {:keys [os-name os-arch]}]
-  (str
-    (strings/join "-" [grpc-plugin-executable-name
-                       grpc-version
-                       os-name
-                       os-arch])
-    ".exe"))
 
 (defn set-protoc-permissions! [protoc-path]
   (let [permissions (java.util.HashSet.)]
@@ -165,20 +179,17 @@ and include this full error message to add support for your platform."
     (java.nio.file.Files/setPosixFilePermissions (.toPath (io/file protoc-path))
                                                  permissions)))
 
-(defn download-protoc! [release-url protoc-version protoc-release base-path]
-  (let [url (str release-url "/v" protoc-version "/" protoc-release ".zip")]
-    (println "protodeps: Downloading protoc from" url "...")
-    (let [dst (append-dir base-path protoc-release)]
-      (with-open [inp (java.util.zip.ZipInputStream. (io/input-stream url))]
-        (unzip! inp dst))
-      dst)))
 
-(defn- download-grpc-plugin! [grpc-release-url grpc-version grpc-release grpc-plugin-file]
-  (let [url (str grpc-release-url "/" grpc-version "/" grpc-release)]
-    (println "protodeps: Downloading grpc java plugin from" url "...")
-    (with-open [input-stream  (io/input-stream url)
-                output-stream (io/output-stream (io/file grpc-plugin-file))]
-      (io/copy input-stream output-stream))))
+(defn download-protoc! [url dst]
+  (println "protodeps: Downloading protoc from" url "...")
+  (with-open [inp (java.util.zip.ZipInputStream. (io/input-stream url))]
+    (unzip! inp dst)))
+
+(defn- download-grpc-plugin! [url grpc-plugin-file]
+  (println "protodeps: Downloading grpc java plugin from" url "...")
+  (with-open [input-stream  (io/input-stream url)
+              output-stream (io/output-stream (io/file grpc-plugin-file))]
+    (io/copy input-stream output-stream)))
 
 
 (defn run-protoc-and-report! [protoc-path opts]
@@ -188,16 +199,25 @@ and include this full error message to add support for your platform."
     (when-not (strings/blank? out)
       (println out))))
 
-(def protoc-release-url "https://github.com/protocolbuffers/protobuf/releases/download")
 
-(def grpc-release-url "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java")
+(def protoc-release-tpl "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip")
 
-(defn mkdir! [dir-path]
-  (let [dir (io/file dir-path)]
-    (when-not (or (.exists dir)
-                  (.mkdirs dir))
-      (throw (ex-info "failed to create dir" {:dir dir-path})))
-    dir))
+
+(def new-protoc-release-tpl "https://github.com/protocolbuffers/protobuf/releases/download/v${:minor}.${:patch}/protoc-${:minor}.${:patch}-${:os-name}-${:os-arch}.zip")
+
+
+(def grpc-release-tpl "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/${:semver}/protoc-gen-grpc-java-${:semver}-${:os-name}-${:os-arch}.exe")
+
+
+(defn- protoc-release-template [{:keys [protoc-zip-url-template]}
+                                {:keys [major minor]}]
+  (or
+    protoc-zip-url-template
+    (if (and (>= major 3) (>= minor 21))
+      ;; 3.21 introduced a breaking change into release naming conventions,
+      ;; see here: https://developers.google.com/protocol-buffers/docs/news/2022-05-06
+      new-protoc-release-tpl
+      protoc-release-tpl)))
 
 
 (def ^:private protoc-install-dir "protoc-installations")
@@ -228,13 +248,15 @@ and include this full error message to add support for your platform."
 
 (defn get-file-dependencies [protoc-path proto-paths ^File proto-file]
   (map io/file
-       (re-seq #"[^\s]*\.proto" (:out
-                                 (run-sh! protoc-path
-                                          (with-proto-paths
-                                            [(long-opt "dependency_out" "/dev/stdout")
-                                             "-o/dev/null"
-                                             (.getAbsolutePath proto-file)]
-                                            proto-paths))))))
+       (re-seq #"[^\s]*\.proto"
+               (:out
+                (run-sh!
+                  protoc-path
+                  (with-proto-paths
+                    [(long-opt "dependency_out" "/dev/stdout")
+                     "-o/dev/null"
+                     (.getAbsolutePath proto-file)]
+                    proto-paths))))))
 
 (defn expand-dependencies [protoc-path proto-paths proto-files]
   (loop [seen-files (set proto-files)
@@ -290,30 +312,28 @@ and include this full error message to add support for your platform."
           (recur (rest sargs) (merge args-res (get valid-args (keyword arg)))))))))
 
 
-(defn- get-protoc! [home-dir config release-platform]
-  (let [proto-version (:proto-version config)]
-    (when-not proto-version
-      (throw (ex-info "proto version not defined" {})))
-    (let [protoc-installs (append-dir home-dir protoc-install-dir)
-          protoc-release  (get-protoc-release proto-version release-platform)
-          protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
-      (when-not (.exists ^File (io/file protoc))
-        (download-protoc! protoc-release-url proto-version protoc-release protoc-installs)
-        (set-protoc-permissions! protoc))
-      protoc)))
+(defn- get-protoc! [home-dir config proto-version]
+  (let [protoc-installs (append-dir home-dir protoc-install-dir)
+        protoc-release  (get-protoc-release proto-version)
+        protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
+    (when-not (.exists ^File (io/file protoc))
+      (let [protoc-zip-url (interpolate proto-version (protoc-release-template config proto-version))]
+        (download-protoc! protoc-zip-url (append-dir protoc-installs protoc-release)))
+      (set-protoc-permissions! protoc))
+    protoc))
 
 
-(defn- get-grpc-plugin! [home-dir config release-platform]
-  (let [grpc-version    (:grpc-version config)
+(defn- get-grpc-plugin! [home-dir config grpc-version]
+  (let [grpc-semver     (:semver grpc-version)
         grpc-installs   (append-dir home-dir grpc-install-dir)
-        grpc-plugin-dir (append-dir grpc-installs grpc-version)
-        grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)      
-        grpc-release    (get-grpc-release grpc-version release-platform)]
+        grpc-plugin-dir (append-dir grpc-installs grpc-semver)
+        grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
     (when (:compile-grpc? config)
       (when (not (.exists ^File (io/file grpc-plugin)))
-        (when-not (.mkdirs (io/file grpc-plugin-dir))
-          (throw (ex-info "cannot create gRPC plugin dir" {:dir grpc-plugin-dir})))
-        (download-grpc-plugin! grpc-release-url grpc-version grpc-release grpc-plugin)
+        (mkdir! grpc-plugin-dir)
+        (let [grpc-exe-url (interpolate grpc-version (or (:grpc-exe-url-template config)
+                                                         grpc-release-tpl))]
+          (download-grpc-plugin! grpc-exe-url grpc-plugin))
         (set-protoc-permissions! grpc-plugin))
       grpc-plugin)))
 
@@ -326,14 +346,16 @@ and include this full error message to add support for your platform."
         ctx                {:base-path base-temp-path}
         keep-tmp?          (true? (:keep-tmp? args))
         env                (System/getProperties)
-        release-platform   (get-platform env)
-        protoc             (get-protoc! home-dir config release-platform)
-        grpc-plugin        (get-grpc-plugin! home-dir config release-platform)
+        platform           (get-platform env)
+        proto-version      (merge platform (parse-semver (:proto-version config)))
+        grpc-version       (merge platform (parse-semver (:grpc-version config)))
+        protoc             (get-protoc! home-dir config proto-version)
+        grpc-plugin        (get-grpc-plugin! home-dir config grpc-version)
         repo-id->repo-path (into {}
                                  (map
-                                  (fn [[k v]]
-                                    (let [ctx (assoc ctx :repo-name k)]
-                                      [k (resolve-repo ctx v)])))
+                                   (fn [[k v]]
+                                     (let [ctx (assoc ctx :repo-name k)]
+                                       [k (resolve-repo ctx v)])))
                                  repos-config)
         proto-paths        (mapcat (fn [[repo-id repo-conf]]
                                      (map #(append-dir (get repo-id->repo-path repo-id) %)
@@ -360,7 +382,7 @@ and include this full error message to add support for your platform."
                                      (:dependencies repo))]
           (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
           (when (empty? proto-files)
-            (print-warning "could not find any .proto files"))
+            (print-warning "could not find any .proto files under" repo-id))
           (doseq [proto-file proto-files]
             (let [protoc-opts (protoc-opts proto-paths
                                            output-path
