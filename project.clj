@@ -1,4 +1,4 @@
-(defproject com.appsflyer/lein-protodeps "1.0.4"
+(defproject com.appsflyer/lein-protodeps "1.0.5-SNAPSHOT"
   :description "Leiningen plugin for consuming and compiling protobuf schemas"
   :url "https://github.com/AppsFlyer/lein-protodeps"
   :license {:name "Apache License, Version 2.0"
