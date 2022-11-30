@@ -1,0 +1,6 @@
+syntax = "proto3";
+package dir4.v1;
+
+message Proto4 {
+  string prop = 1;
+}

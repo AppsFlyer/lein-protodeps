@@ -3,7 +3,8 @@
             [clojure.string :as strings]
             [clojure.java.shell :as sh]
             [clojure.set :as sets]
-            [leiningen.core.main :as lein])
+            [leiningen.core.main :as lein]
+            [clojure.tools.cli :as cli])
   (:import [java.io File]
            [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]
@@ -231,12 +232,11 @@ and include this full error message to add support for your platform."
     home))
 
 (defn discover-files [git-repo-path dep-path]
-  (filter
-    (fn [^File file]
-      (and (not (.isDirectory file))
-           (strings/ends-with? (.getName file) ".proto")))
-    (file-seq (io/file (append-dir git-repo-path dep-path)))))
-
+  (filterv
+   (fn [^File file]
+     (and (not (.isDirectory file))
+          (strings/ends-with? (.getName file) ".proto")))
+   (file-seq (io/file (append-dir git-repo-path dep-path)))))
 
 (defn long-opt [k v]
   (str "--" k "=" v))
@@ -251,26 +251,48 @@ and include this full error message to add support for your platform."
        (re-seq #"[^\s]*\.proto"
                (:out
                 (run-sh!
-                  protoc-path
-                  (with-proto-paths
-                    [(long-opt "dependency_out" "/dev/stdout")
-                     "-o/dev/null"
-                     (.getAbsolutePath proto-file)]
-                    proto-paths))))))
+                 protoc-path
+                 (with-proto-paths
+                   [(long-opt "dependency_out" "/dev/stdout")
+                    "-o/dev/null"
+                    (.getAbsolutePath proto-file)]
+                   proto-paths))))))
 
-(defn expand-dependencies [protoc-path proto-paths proto-files]
-  (loop [seen-files (set proto-files)
-         [f & r]    proto-files]
-    (if-not f
-      seen-files
-      (let [deps (get-file-dependencies protoc-path proto-paths f)]
-        (recur (conj seen-files f)
-               (concat
-                 r
-                 (filter
-                   (fn [^File afile]
-                     (not (some #(Files/isSameFile (.toPath ^File %) (.toPath afile)) seen-files)))
-                   deps)))))))
+
+(defn parallelize [{:keys [level min-chunk-size]} c combine-f f]
+  (if (or (= 1 level) (< (count c) min-chunk-size))
+    (f c)
+    (let [chunks (partition-all (int (/ (count c) level)) c)
+          ;; parallelism is capped by number of cores
+          results (pmap f chunks)]
+      (transduce (map identity) combine-f results))))
+
+(defn expand-dependencies [parallelism protoc-path proto-paths proto-files]
+  (parallelize
+   parallelism
+   proto-files
+   sets/union
+   (fn [proto-files]
+     (loop [seen-files (set proto-files)
+            [f & r]    proto-files]
+       (if-not f
+         seen-files
+         (let [deps (get-file-dependencies protoc-path proto-paths f)
+               deps (filterv
+                     (fn [^File afile]
+                       (not (some #(Files/isSameFile (.toPath ^File %) (.toPath afile)) seen-files)))
+                     deps)]
+           (recur
+            (conj seen-files f)
+            ;; For very large repos, we might end up concatenating an empty `deps` seq
+            ;; many times over since most of the depenendencies will already be seen in prev iterations.
+            ;; This could lead to the build up of a huge lazy-seq, since `concat` will still
+            ;; cons to the seq. To circumvent this we concat only when non-empty.
+            (if-not (seq deps)
+              r
+              (concat
+               r
+               deps)))))))))
 
 (defn strip-suffix [suffix s]
   (if (strings/ends-with? s suffix)
@@ -300,17 +322,14 @@ and include this full error message to add support for your platform."
       compile-grpc? (conj (long-opt "plugin" grpc-plugin))
       true          (conj (.getAbsolutePath proto-file)))))
 
-(defn- parse-args [args]
-  (let [verbosely {:verbose true}
-        valid-args {:verbose verbosely :-v verbosely :--verbose verbosely
-                    :--keep-tmp-dir {:keep-tmp? true}}]
-    (loop [sargs    (vec (set args))
-           args-res {}]
-      (if (empty? sargs)
-        args-res
-        (let [arg (first sargs)]
-          (recur (rest sargs) (merge args-res (get valid-args (keyword arg)))))))))
-
+(def cli-spec
+  [["-h" "--help"]
+   [nil "--keep-tmp-dir" "Don't delete temporary dir after process exits" :default false]
+   ["-v" "--verbose" "Verbosity level" :default false]
+   ["-p" "--parallelism PAR" "Parallelism level"
+    :default (.availableProcessors (Runtime/getRuntime))
+    :validate [pos?]
+    :parse-fn #(Integer/parseInt %)]])
 
 (defn- get-protoc! [home-dir config proto-version]
   (let [protoc-installs (append-dir home-dir protoc-install-dir)
@@ -337,14 +356,15 @@ and include this full error message to add support for your platform."
         (set-protoc-permissions! grpc-plugin))
       grpc-plugin)))
 
-
-(defn generate-files! [args config]
+(defn generate-files! [opts config]
   (let [home-dir           (init-rc-dir!)
+        parallelism        {:level (:parallelism opts)
+                            :min-chunk-size 128}
         repos-config       (:repos config)
         output-path        (:output-path config)
         base-temp-path     (create-temp-dir!)
         ctx                {:base-path base-temp-path}
-        keep-tmp?          (true? (:keep-tmp? args))
+        keep-tmp?          (true? (:keep-tmp-dir opts))
         env                (System/getProperties)
         platform           (get-platform env)
         proto-version      (merge platform (parse-semver (:proto-version config)))
@@ -369,28 +389,38 @@ and include this full error message to add support for your platform."
       (verbose-prn "output-path: %s" output-path)
       (doseq [[repo-id repo] repos-config]
         (let [repo-path   (get repo-id->repo-path repo-id)
-              proto-files (transduce (map
-                                       ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
-                                       ;; as part of the `:dependencies` vector.
-                                       (fn [proto-dir-or-vec]
-                                         (let [proto-dir (if (vector? proto-dir-or-vec)
-                                                           (first proto-dir-or-vec)
-                                                           proto-dir-or-vec)]
-                                           (expand-dependencies protoc proto-paths
-                                                                (discover-files repo-path (str proto-dir))))))
-                                     sets/union
-                                     (:dependencies repo))]
+              proto-files (transduce
+                           (map
+                            ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
+                            ;; as part of the `:dependencies` vector.
+                            (fn [proto-dir-or-vec]
+                              (let [proto-dir (if (vector? proto-dir-or-vec)
+                                                (first proto-dir-or-vec)
+                                                proto-dir-or-vec)]
+                                (println "analyzing" proto-dir "... This may take a while for large repos")
+                                (expand-dependencies
+                                 parallelism
+                                 protoc proto-paths
+                                 (discover-files repo-path (str proto-dir))))))
+                           sets/union
+                           (:dependencies repo))]
           (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
           (when (empty? proto-files)
             (print-warning "could not find any .proto files under" repo-id))
-          (doseq [proto-file proto-files]
-            (let [protoc-opts (protoc-opts proto-paths
-                                           output-path
-                                           (:compile-grpc? config)
-                                           grpc-plugin
-                                           proto-file)]
-              (println "compiling" (.getName proto-file) "...")
-              (run-protoc-and-report! protoc protoc-opts)))))
+          (parallelize
+           parallelism
+           proto-files
+           (constantly nil)
+           (fn [proto-files]
+             (doseq [proto-file proto-files]
+               (let [protoc-opts (protoc-opts
+                                  proto-paths
+                                  output-path
+                                  (:compile-grpc? config)
+                                  grpc-plugin
+                                  proto-file)]
+                 (println "compiling" (.getName proto-file))
+                 (run-protoc-and-report! protoc protoc-opts)))))))
 
       (finally
         (if keep-tmp?
@@ -399,27 +429,31 @@ and include this full error message to add support for your platform."
 
 (defn generate-files*!
   "Generate protoc & gRPC stubs according to the `:lein-protodeps` configuration in `project.clj`"
-  [args project]
-  (let [parsed-args     (parse-args args)
-        config          (:lein-protodeps project)
+  [opts project]
+  (let [config          (:lein-protodeps project)
         output-path     (:output-path config)]
-    (binding [*verbose?* (:verbose parsed-args)]
-      (verbose-prn "config: %s" config)
-      (validate-output-path output-path project)
-      (generate-files! parsed-args config))))
+    (if (nil? config)
+      (print-warning "No :lein-protodeps configuration found in project.clj")
+      (binding [*verbose?* (-> opts :verbose)]
+        (verbose-prn "config: %s" config)
+        (validate-output-path output-path project)
+        (generate-files! opts config)))))
 
 (defn protodeps
-  "Automate protobuf dependency management
-  -v, --verbose
-       Produce verbose output
-  --keep-tmp-dir
-       Don't remove the temp dir used to clone repos and print its path before finishing
-  "
   {:subtasks [#'generate-files*!]}
-  [project & [mode & args]]
-  (case mode
-    "generate" (generate-files*! args project)
-    (lein/warn "Unknown task")))
+  [project & args]
+  (let [{:keys [options summary errors arguments]} (cli/parse-opts args cli-spec)]
+    (cond
+      (:help options)
+      (println summary)
+      errors
+      (doseq [err errors]
+        (print-warning err))
+      :else
+      (let [mode (first arguments)]
+        (case mode
+          "generate" (generate-files*! options project)
+          (lein/warn "Unknown task" mode))))))
 
 (comment
   (def config '{:output-path   "src/java/generated"
