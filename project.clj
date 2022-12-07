@@ -4,6 +4,7 @@
   :license {:name "Apache License, Version 2.0"
             :url  "http://www.apache.org/licenses/LICENSE-2.0.html"}
   :eval-in-leiningen true
+  :dependencies [[org.clojure/tools.cli "1.0.214"]]
   :deploy-repositories [["releases" {:url "https://repo.clojars.org"
                                      :sign-releases false
                                      :username :env/clojars_username
