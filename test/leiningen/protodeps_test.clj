@@ -79,19 +79,23 @@
 
 (deftest aarch64-url-generation-test
   (testing "Test that protoc download URL is correctly generated for aarch64 architecture"
-    (let [platform {:os-name "linux" :os-arch "aarch_64" :semver "24.3"}
-          url-template "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
-          expected-url "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch_64.zip"]
+    (let [platform      {:os-name "linux"
+                         :os-arch "aarch_64"
+                         :semver  "24.3"}
+          url-template  "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
+          expected-url  "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch_64.zip"]
       (is (= expected-url (@#'sut/interpolate platform url-template))
           "URL should be correctly generated with aarch_64 architecture name"))))
 
 (deftest aarch64-issue-8-fix-test
   (testing "Test that the fix for GitHub issue #8 works correctly"
-    (let [platform {:os-name "linux" :os-arch "aarch_64" :semver "24.3"}
-          url-template "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
+    (let [platform      {:os-name "linux"
+                         :os-arch "aarch_64" 
+                         :semver  "24.3"}
+          url-template  "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
           generated-url (@#'sut/interpolate platform url-template)
           ;; The issue mentioned the correct URL should have aarch_64 (with underscore)
-          correct-url "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch_64.zip"
+          correct-url   "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch_64.zip"
           ;; The issue mentioned the incorrect URL was aarch64 (without underscore)
           incorrect-url "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch64.zip"]
       (is (= correct-url generated-url)
