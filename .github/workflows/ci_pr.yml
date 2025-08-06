@@ -1,8 +1,11 @@
-name: "Release"
+name: "CI - Pull Requests"
 
 on:
-  push:
+  pull_request:
     branches:
+      - master
+  push:
+    branches-ignore:
       - master
 
 jobs:
@@ -33,8 +36,8 @@ jobs:
           version: '2025.07.28'
           
       - name: Lint
-        run: clj-kondo --lint src test  
- 
+        run: clj-kondo --lint src test
+
   test:
     needs: build
     runs-on: ubuntu-latest
@@ -62,10 +65,12 @@ jobs:
           IP_STACK_ACCESS_KEY: ${{ secrets.IP_STACK_ACCESS_KEY }}
         run: lein test
 
-  deploy:
+  deploy-snapshot:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Only deploy snapshots for pushes to non-master branches (not PRs)
+    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,26 +89,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Deploy release version
+      - name: Deploy SNAPSHOT version
         env:
-          RELEASE_REGEX: ^[0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,3}$
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SNAPSHOT_REGEX: ^[0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,3}-SNAPSHOT$
           CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
           CLOJARS_PASSWORD: ${{ secrets.CLOJARS_PASSWORD }}
         run: |
           git config --global user.name "github-actions-bot"
           git config --global user.email "<>"
-          git config --global push.followTags true
           lein pom
           export VERSION=$(grep "<version>" pom.xml | head -1 | cut -d ">" -f2 | cut -d "<" -f1)
           echo "version is:" $VERSION
-          if [[ !("$VERSION" =~ $RELEASE_REGEX) ]]
+          if [[ !("$VERSION" =~ $SNAPSHOT_REGEX) ]]
           then
-            echo "Version isn't a release version:" $VERSION ", skipping deployment to Clojars..."
+            echo "Version isn't a SNAPSHOT version:" $VERSION ", skipping deployment to Clojars..."
             exit 0
           fi
           lein deploy
-          echo "Release version:" $VERSION"; commit: "${{github.sha}}"; successfully deployed to Clojars"
-          export TAG_NAME="v$VERSION"
-          git tag -a -m "Version $VERSION" $TAG_NAME
-          git push origin $TAG_NAME
+          echo "SNAPSHOT version:" $VERSION"; commit: "${{github.sha}}"; branch: "${{github.ref_name}}"; successfully deployed to Clojars"
