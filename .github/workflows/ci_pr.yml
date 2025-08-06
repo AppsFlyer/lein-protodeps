@@ -4,9 +4,6 @@ on:
   pull_request:
     branches:
       - master
-  push:
-    branches-ignore:
-      - master
 
 jobs:
   build:
@@ -59,6 +56,13 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
           restore-keys: |
             ${{ runner.os }}-maven-
+            
+      - name: Install Leiningen
+        run: |
+          wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+          chmod +x lein
+          sudo mv lein /usr/local/bin/
+          lein version
 
       - name: Unit tests
         env:
@@ -69,8 +73,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Only deploy snapshots for pushes to non-master branches (not PRs)
-    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
+    # Deploy snapshots for PRs so they can be tested elsewhere
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,6 +91,13 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
           restore-keys: |
             ${{ runner.os }}-maven-
+            
+      - name: Install Leiningen
+        run: |
+          wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+          chmod +x lein
+          sudo mv lein /usr/local/bin/
+          lein version
 
       - name: Deploy SNAPSHOT version
         env:
@@ -106,4 +116,4 @@ jobs:
             exit 0
           fi
           lein deploy
-          echo "SNAPSHOT version:" $VERSION"; commit: "${{github.sha}}"; branch: "${{github.ref_name}}"; successfully deployed to Clojars"
+          echo "SNAPSHOT version:" $VERSION"; commit: "${{github.sha}}"; PR: "${{github.event.pull_request.number}}"; successfully deployed to Clojars"

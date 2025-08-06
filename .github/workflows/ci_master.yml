@@ -56,6 +56,13 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
           restore-keys: |
             ${{ runner.os }}-maven-
+            
+      - name: Install Leiningen
+        run: |
+          wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+          chmod +x lein
+          sudo mv lein /usr/local/bin/
+          lein version
 
       - name: Unit tests
         env:
@@ -83,6 +90,13 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
           restore-keys: |
             ${{ runner.os }}-maven-
+            
+      - name: Install Leiningen
+        run: |
+          wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+          chmod +x lein
+          sudo mv lein /usr/local/bin/
+          lein version
 
       - name: Deploy release version
         env:
