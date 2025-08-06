@@ -138,7 +138,7 @@
       (recur))))
 
 (def os-name->os {"Linux" "linux" "Mac OS X" "osx"})
-(def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64" "aarch64" "aarch64"})
+(def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64" "aarch64" "aarch_64"})
 
 
 (defn get-prop [env prop-name]
