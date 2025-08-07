@@ -76,6 +76,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
         
       - name: Set up JDK 8
         uses: actions/setup-java@v4
@@ -109,15 +112,19 @@ jobs:
           git config --global user.email "<>"
           git config --global push.followTags true
           lein pom
-          export VERSION=$(grep "<version>" pom.xml | head -1 | cut -d ">" -f2 | cut -d "<" -f1)
-          echo "version is:" $VERSION
-          if [[ !("$VERSION" =~ $RELEASE_REGEX) ]]
+          export ORIGINAL_VERSION=$(less pom.xml | grep "<version>" | head -1 | cut -d ">" -f2 | cut -d "<" -f1)
+          echo "Original version is:" $ORIGINAL_VERSION
+          lein change version leiningen.release/bump-version release
+          lein do vcs commit, install
+          lein pom
+          export RELEASE_VERSION=$(less pom.xml | grep "<version>" | head -1 | cut -d ">" -f2 | cut -d "<" -f1)
+          echo "Release version is:" $RELEASE_VERSION
+          if [[ !("$RELEASE_VERSION" =~ $RELEASE_REGEX) ]]
           then
-            echo "Version isn't a release version:" $VERSION ", skipping deployment to Clojars..."
+            echo "Version isn't a release version:" $RELEASE_VERSION ", skipping deployment to Clojars..."
             exit 0
           fi
           lein deploy
-          echo "Release version:" $VERSION"; commit: "${{github.sha}}"; successfully deployed to Clojars"
-          export TAG_NAME="v$VERSION"
-          git tag -a -m "Version $VERSION" $TAG_NAME
-          git push origin $TAG_NAME
+          echo "Release version:" $RELEASE_VERSION"; commit: "${{github.sha}}"; successfully deployed to Clojars"
+          git tag -a $RELEASE_VERSION -m "Release version $RELEASE_VERSION"
+          git push origin master
