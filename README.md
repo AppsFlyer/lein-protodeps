@@ -30,7 +30,7 @@ are not already installed.
 
 ## Usage
 
-Put `[com.appsflyer/lein-protodeps "1.0.5"]` into the `:plugins` vector of your project.clj.
+Put `[com.appsflyer/lein-protodeps "1.0.6"]` into the `:plugins` vector of your project.clj.
 
 Once installed, run `lein protodeps generate` to run the plugin.
 
@@ -97,7 +97,7 @@ However, it is possible to override these to other endpoints by setting `:protoc
 The values of these options are URL templates that will be interpolated at runtime with the following variables to produce download URLs:
 
 * `:os-name` host OS (i.e, `linux`, `osx`)
-* `:os-arch` host architecture (i.e, `x86_64`, `aarch64`)
+* `:os-arch` host architecture (i.e, `x86_64`, `aarch_64`). Note: `aarch64` systems are automatically mapped to `aarch_64` to match protoc binary naming conventions
 * `:semver` version string as defined in `:protoc-version` or `:grpc-version`
 * `:major` major part of `:semver`
 * `:minor` minor part of `:semver`
