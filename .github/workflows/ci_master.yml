@@ -129,5 +129,5 @@ jobs:
           fi
           lein deploy
           echo "Release version:" $RELEASE_VERSION"; commit: "${{github.sha}}"; successfully deployed to Clojars"
-          git tag -a $RELEASE_VERSION -m "Release version $RELEASE_VERSION"
+          git tag -a v$RELEASE_VERSION -m "Release version $RELEASE_VERSION"
           git push origin master
