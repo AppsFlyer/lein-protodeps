@@ -211,3 +211,56 @@
       (is (some #(= "--plugin=/plugins/protoc-gen-doc" %) result))
       (is (some #(= "--doc_out=/output" %) result))
       (is (some #(= "--doc_opt=markdown,docs.md" %) result)))))
+
+(deftest protoc-gen-validate-plugin-test
+  (testing "Protoc-gen-validate plugin generates validator files"
+    (run-test!
+     (fn [tmp-dir-no-plugin]
+       ;; First, compile without the plugin - should NOT generate validator files
+       (let [config-no-plugin {:output-path (str tmp-dir-no-plugin)
+                               :proto-version "3.25.5"
+                               :repos '{:user-protos {:repo-type :filesystem
+                                                      :config {:path "./resources/test/proto_repo3"}
+                                                      :proto-paths ["protos"]
+                                                      :dependencies [protos/validation]}
+                                        :validate {:repo-type :git
+                                                   :config {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
+                                                            :rev "v1.3.0"}
+                                                   :proto-paths ["."]}}}]
+         (sut/generate-files! {} config-no-plugin)
+         (let [files (->> (.toFile tmp-dir-no-plugin)
+                          file-seq
+                          (filter #(not (.isDirectory ^File %)))
+                          (map #(.getName ^File %))
+                          set)]
+           (is (some #(= "User.java" %) files) "User.java should be generated")
+           (is (not (some #(.contains ^String % "Validator") files)) 
+               "No Validator files should be generated without the plugin")))))
+    
+    (run-test!
+     (fn [tmp-dir-with-plugin]
+       ;; Now compile WITH the plugin - SHOULD generate validator files
+       (let [config-with-plugin {:output-path (str tmp-dir-with-plugin)
+                                 :proto-version "3.25.5"
+                                 :plugins [{:name "protoc-gen-validate"
+                                           :version "1.3.0"
+                                           :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
+                                           :output-directive "validate_out"
+                                           :options {:lang "java"}}]
+                                 :repos '{:user-protos {:repo-type :filesystem
+                                                        :config {:path "./resources/test/proto_repo3"}
+                                                        :proto-paths ["protos"]
+                                                        :dependencies [protos/validation]}
+                                          :validate {:repo-type :git
+                                                     :config {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
+                                                              :rev "v1.3.0"}
+                                                     :proto-paths ["."]}}}]
+         (sut/generate-files! {} config-with-plugin)
+         (let [files (->> (.toFile tmp-dir-with-plugin)
+                          file-seq
+                          (filter #(not (.isDirectory ^File %)))
+                          (map #(.getName ^File %))
+                          set)]
+           (is (some #(= "User.java" %) files) "User.java should be generated")
+           (is (some #(= "UserValidator.java" %) files) 
+               "UserValidator.java should be generated with the plugin")))))))
