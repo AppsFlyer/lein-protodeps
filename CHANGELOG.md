@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-12-09
+
+### Added
+* Generic protoc plugin support via `:plugins` configuration option
+* Auto-download plugins from configurable URL templates
+* Plugin-specific options support (e.g., `lang=java` for protoc-gen-validate)
+* Multiple plugins can run simultaneously
+* Test coverage for plugin functionality
+* Plugin `:additional-flags` configuration option for plugins requiring extra protoc flags (e.g., `protoc-gen-doc`'s `--doc_opt`)
+
+### Changed
+* `protoc-opts` function now accepts a vector of plugins
+* Legacy gRPC configuration converted to plugin format internally
+* Unified plugin installation directory to `~/.lein-protodeps/plugins-installations/<plugin-name>/<version>/` for all plugins including gRPC
+* Plugin downloads try multiple platform naming conventions automatically (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds
+
+### Removed
+* Removed `get-grpc-plugin!` and `download-grpc-plugin!` functions
+
+### Fixed
+* Plugin binaries always have execute permissions set, even when previously downloaded
+* Plugin downloads handle `.tar.gz`, `.gz`, and plain executable formats
+* Plugin downloads try all platform name variants before failing
+
 ## [1.0.6] - 2025-08-07
 
 ### Fixed
