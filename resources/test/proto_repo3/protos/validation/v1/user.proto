@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package validation.v1;
+
+import "validate/validate.proto";
+
+option java_package = "validation.v1";
+option java_multiple_files = true;
+
+message User {
+  // Email must be valid format
+  string email = 1 [(validate.rules).string.email = true];
+  
+  // Age must be between 0 and 150
+  int32 age = 2 [(validate.rules).int32 = {gte: 0, lte: 150}];
+  
+  // Name must not be empty
+  string name = 3 [(validate.rules).string.min_len = 1];
+}
+
