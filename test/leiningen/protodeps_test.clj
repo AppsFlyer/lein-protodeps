@@ -1,8 +1,9 @@
 (ns leiningen.protodeps-test
-  (:require [leiningen.protodeps :as sut]
-            [clojure.test :refer [deftest is testing]])
-  (:import [java.nio.file Path]
-           [java.io File]))
+  (:require [clojure.test :refer [are deftest is testing]]
+            [leiningen.protodeps :as sut])
+  (:import (java.io File)
+           (java.nio.file Path)
+           (java.util Properties)))
 
 (defn- run-test! [test]
   (let [^Path tmp-dir (sut/create-temp-dir!)]
@@ -13,64 +14,64 @@
 
 (deftest integration-test
   (run-test!
-   (fn [tmp-dir]
-     (let [config {:output-path (str tmp-dir)
-                   :proto-version "3.11.3"
-                   :repos '{:repo1 {:repo-type :filesystem
-                                    :config {:path "./resources/test/proto_repo"}
-                                    :proto-paths ["protos"]
-                                    :dependencies [protos]}
-                            ;; external dependency repo, no direct schemas to compile
-                            :repo2 {:repo-type :filesystem
-                                    :config {:path "./resources/test/proto_repo2"}
-                                    :proto-paths ["protos"]}}}]
-       (sut/generate-files! {} config)
-       (is (= #{"dir1/v1/File1.java" "dir2/v1/File2.java" "dir3/v1/File3.java" "dir4/v1/File4.java"}
-              (->> (.toFile tmp-dir)
-                   file-seq
-                   (filter #(not (.isDirectory ^File %)))
-                   (map #(.relativize tmp-dir (.toPath ^File %)))
-                   (map str)
-                   set))))))
+    (fn [tmp-dir]
+      (let [config {:output-path   (str tmp-dir)
+                    :proto-version "3.11.3"
+                    :repos         '{:repo1 {:repo-type    :filesystem
+                                             :config       {:path "./resources/test/proto_repo"}
+                                             :proto-paths  ["protos"]
+                                             :dependencies [protos]}
+                                     ;; external dependency repo, no direct schemas to compile
+                                     :repo2 {:repo-type   :filesystem
+                                             :config      {:path "./resources/test/proto_repo2"}
+                                             :proto-paths ["protos"]}}}]
+        (sut/generate-files! {} config)
+        (is (= #{"dir1/v1/File1.java" "dir2/v1/File2.java" "dir3/v1/File3.java" "dir4/v1/File4.java"}
+               (->> (.toFile tmp-dir)
+                    file-seq
+                    (filter #(not (.isDirectory ^File %)))
+                    (map #(.relativize tmp-dir (.toPath ^File %)))
+                    (map str)
+                    set))))))
   (run-test!
-   (fn [tmp-dir]
-     (let [config {:output-path (str tmp-dir)
-                   :proto-version "3.11.3"
-                   :repos '{:repo1 {:repo-type :filesystem
-                                    :config {:path "./resources/test/proto_repo"}
-                                    :proto-paths ["protos"]
-                                    :dependencies [protos/dir1]}
-                            ;; external dependency repo, no direct schemas to compile
-                            :repo2 {:repo-type :filesystem
-                                    :config {:path "./resources/test/proto_repo2"}
-                                    :proto-paths ["protos"]}}}]
-       (sut/generate-files! {} config)
-       (is (= #{"dir1/v1/File1.java" "dir2/v1/File2.java" "dir3/v1/File3.java"}
-              (->> (.toFile tmp-dir)
-                   file-seq
-                   (filter #(not (.isDirectory ^File %)))
-                   (map #(.relativize tmp-dir (.toPath ^File %)))
-                   (map str)
-                   set))))))
+    (fn [tmp-dir]
+      (let [config {:output-path   (str tmp-dir)
+                    :proto-version "3.11.3"
+                    :repos         '{:repo1 {:repo-type    :filesystem
+                                             :config       {:path "./resources/test/proto_repo"}
+                                             :proto-paths  ["protos"]
+                                             :dependencies [protos/dir1]}
+                                     ;; external dependency repo, no direct schemas to compile
+                                     :repo2 {:repo-type   :filesystem
+                                             :config      {:path "./resources/test/proto_repo2"}
+                                             :proto-paths ["protos"]}}}]
+        (sut/generate-files! {} config)
+        (is (= #{"dir1/v1/File1.java" "dir2/v1/File2.java" "dir3/v1/File3.java"}
+               (->> (.toFile tmp-dir)
+                    file-seq
+                    (filter #(not (.isDirectory ^File %)))
+                    (map #(.relativize tmp-dir (.toPath ^File %)))
+                    (map str)
+                    set))))))
   (run-test!
-   (fn [tmp-dir]
-     (let [config {:output-path (str tmp-dir)
-                   :proto-version "3.11.3"
-                   :repos '{:repo1 {:repo-type :filesystem
-                                    :config {:path "./resources/test/proto_repo"}
-                                    :proto-paths ["protos"]}
-                            :repo2 {:repo-type :filesystem
-                                    :config {:path "./resources/test/proto_repo2"}
-                                    :proto-paths ["protos"]
-                                    :dependencies [protos/dir3]}}}]
-       (sut/generate-files! {} config)
-       (is (= #{"dir3/v1/File3.java"}
-              (->> (.toFile tmp-dir)
-                   file-seq
-                   (filter #(not (.isDirectory ^File %)))
-                   (map #(.relativize tmp-dir (.toPath ^File %)))
-                   (map str)
-                   set)))))))
+    (fn [tmp-dir]
+      (let [config {:output-path   (str tmp-dir)
+                    :proto-version "3.11.3"
+                    :repos         '{:repo1 {:repo-type   :filesystem
+                                             :config      {:path "./resources/test/proto_repo"}
+                                             :proto-paths ["protos"]}
+                                     :repo2 {:repo-type    :filesystem
+                                             :config       {:path "./resources/test/proto_repo2"}
+                                             :proto-paths  ["protos"]
+                                             :dependencies [protos/dir3]}}}]
+        (sut/generate-files! {} config)
+        (is (= #{"dir3/v1/File3.java"}
+               (->> (.toFile tmp-dir)
+                    file-seq
+                    (filter #(not (.isDirectory ^File %)))
+                    (map #(.relativize tmp-dir (.toPath ^File %)))
+                    (map str)
+                    set)))))))
 
 (deftest aarch64-architecture-mapping-test
   (testing "Test that aarch64 architecture is correctly mapped with multiple variants"
@@ -82,9 +83,9 @@
 
 (deftest platform-variants-test
   (testing "Platform provides naming variants and stores all alternatives"
-    (let [env (doto (java.util.Properties.)
-                (.setProperty "os.name" "Mac OS X")
-                (.setProperty "os.arch" "aarch64"))
+    (let [env      (doto (Properties.)
+                     (.setProperty "os.name" "Mac OS X")
+                     (.setProperty "os.arch" "aarch64"))
           platform (@#'sut/get-platform env)]
       (is (= "osx" (:os-name platform)) "Default os-name uses first variant (protoc style)")
       (is (= "aarch_64" (:os-arch platform)) "Default os-arch uses first variant (protoc style)")
@@ -93,18 +94,18 @@
 
 (deftest aarch64-url-generation-test
   (testing "Test that protoc download URL is correctly generated for aarch64 architecture"
-    (let [platform      {:os-name "linux"
-                         :os-arch "aarch_64"
-                         :semver  "24.3"}
-          url-template  "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
-          expected-url  "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch_64.zip"]
+    (let [platform     {:os-name "linux"
+                        :os-arch "aarch_64"
+                        :semver  "24.3"}
+          url-template "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
+          expected-url "https://github.com/protocolbuffers/protobuf/releases/download/v24.3/protoc-24.3-linux-aarch_64.zip"]
       (is (= expected-url (@#'sut/interpolate platform url-template))
           "URL should be correctly generated with aarch_64 architecture name"))))
 
 (deftest aarch64-issue-8-fix-test
   (testing "Test that the fix for GitHub issue #8 works correctly"
     (let [platform      {:os-name "linux"
-                         :os-arch "aarch_64" 
+                         :os-arch "aarch_64"
                          :semver  "24.3"}
           url-template  "https://github.com/protocolbuffers/protobuf/releases/download/v${:semver}/protoc-${:semver}-${:os-name}-${:os-arch}.zip"
           generated-url (@#'sut/interpolate platform url-template)
@@ -119,11 +120,11 @@
 
 (deftest plugin-options-formatting-test
   (testing "Format plugin options as key=value pairs"
-    (is (= "lang=java" (@#'sut/format-plugin-options {:lang "java"})))
-    (is (= "lang=java,paths=source_relative" 
-           (@#'sut/format-plugin-options {:lang "java" :paths "source_relative"})))
-    (is (nil? (@#'sut/format-plugin-options {})))
-    (is (nil? (@#'sut/format-plugin-options nil)))))
+    (are [expected input] (= expected (@#'sut/format-plugin-options input))
+                          "lang=java" {:lang "java"}
+                          "lang=java,paths=source_relative" {:lang "java" :paths "source_relative"}
+                          nil {}
+                          nil nil)))
 
 (deftest plugin-url-interpolation-test
   (testing "Plugin URL interpolation with platform and version variables"
@@ -142,125 +143,124 @@
           (is (= "protoc-gen-grpc-java" (:name (first result))))
           (is (= "1.30.2" (:version (first result))))
           (is (= "grpc-java_out" (:output-directive (first result))))))
-      
+
       (testing "When compile-grpc? is false, return only configured plugins"
         (let [config {:compile-grpc? false
-                      :plugins [{:name "protoc-gen-validate"
-                                :version "1.0.2"}]}
+                      :plugins       [{:name    "protoc-gen-validate"
+                                       :version "1.0.2"}]}
               result (@#'sut/merge-legacy-grpc-config config grpc-version)]
           (is (= 1 (count result)))
           (is (= "protoc-gen-validate" (:name (first result))))))
-      
+
       (testing "Merge gRPC with additional plugins"
         (let [config {:compile-grpc? true
-                      :grpc-version "1.30.2"
-                      :plugins [{:name "protoc-gen-validate"
-                                :version "1.0.2"
-                                :url-template "https://example.com/validate"
-                                :output-directive "validate_out"}]}
+                      :grpc-version  "1.30.2"
+                      :plugins       [{:name             "protoc-gen-validate"
+                                       :version          "1.0.2"
+                                       :url-template     "https://example.com/validate"
+                                       :output-directive "validate_out"}]}
               result (@#'sut/merge-legacy-grpc-config config grpc-version)]
           (is (= 2 (count result)))
           (is (= "protoc-gen-grpc-java" (:name (first result))))
           (is (= "protoc-gen-validate" (:name (second result))))))
-      
+
       (testing "No plugins when compile-grpc? is false and no plugins configured"
         (let [config {:compile-grpc? false}
               result (@#'sut/merge-legacy-grpc-config config grpc-version)]
           (is (empty? result)))))))
 
 (deftest protoc-opts-with-plugins-test
-  (testing "Build protoc command with multiple plugins"
-    (let [proto-paths ["/path/to/protos"]
-          output-path "/output"
-          plugins [{:plugin-path "/plugins/protoc-gen-grpc-java"
-                   :output-directive "grpc-java_out"
-                   :options nil}
-                  {:plugin-path "/plugins/protoc-gen-validate"
-                   :output-directive "validate_out"
-                   :options {:lang "java"}}]
-          proto-file (java.io.File. "/protos/test.proto")
-          result (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
-      (is (some #(= "--proto_path=/path/to/protos" %) result))
-      (is (some #(= "--java_out=/output" %) result))
-      (is (some #(= "--plugin=/plugins/protoc-gen-grpc-java" %) result))
-      (is (some #(= "--grpc-java_out=/output" %) result))
-      (is (some #(= "--plugin=/plugins/protoc-gen-validate" %) result))
-      (is (some #(= "--validate_out=lang=java:/output" %) result))
-      (is (some #(= "/protos/test.proto" %) result))))
-  
-  (testing "Build protoc command without plugins"
-    (let [proto-paths ["/path/to/protos"]
-          output-path "/output"
-          plugins []
-          proto-file (java.io.File. "/protos/test.proto")
-          result (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
-      (is (some #(= "--proto_path=/path/to/protos" %) result))
-      (is (some #(= "--java_out=/output" %) result))
-      (is (some #(= "/protos/test.proto" %) result))
-      (is (not-any? #(.startsWith ^String % "--plugin=") result))))
-  
-  (testing "Build protoc command with additional flags"
-    (let [proto-paths ["/path/to/protos"]
-          output-path "/output"
-          plugins [{:plugin-path "/plugins/protoc-gen-doc"
-                   :output-directive "doc_out"
-                   :options nil
-                   :additional-flags {:doc_opt "markdown,docs.md"}}]
-          proto-file (java.io.File. "/protos/test.proto")
-          result (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
-      (is (some #(= "--plugin=/plugins/protoc-gen-doc" %) result))
-      (is (some #(= "--doc_out=/output" %) result))
-      (is (some #(= "--doc_opt=markdown,docs.md" %) result)))))
+  (let [proto-paths    ["/path/to/protos"]
+        output-path    "/output"
+        proto-file     (File. "/protos/test.proto")
+        contains-flag? (fn [result flag] (some #(= flag %) result))]
+
+    (testing "Build protoc command with multiple plugins"
+      (let [plugins [{:plugin-path      "/plugins/protoc-gen-grpc-java"
+                      :output-directive "grpc-java_out"
+                      :options          nil}
+                     {:plugin-path      "/plugins/protoc-gen-validate"
+                      :output-directive "validate_out"
+                      :options          {:lang "java"}}]
+            result  (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
+        (are [flag] (contains-flag? result flag)
+                    "--proto_path=/path/to/protos"
+                    "--java_out=/output"
+                    "--plugin=/plugins/protoc-gen-grpc-java"
+                    "--grpc-java_out=/output"
+                    "--plugin=/plugins/protoc-gen-validate"
+                    "--validate_out=lang=java:/output"
+                    "/protos/test.proto")))
+
+    (testing "Build protoc command without plugins"
+      (let [plugins []
+            result  (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
+        (are [flag] (contains-flag? result flag)
+                    "--proto_path=/path/to/protos"
+                    "--java_out=/output"
+                    "/protos/test.proto")
+        (is (not-any? #(.startsWith ^String % "--plugin=") result))))
+
+    (testing "Build protoc command with additional flags"
+      (let [plugins [{:plugin-path      "/plugins/protoc-gen-doc"
+                      :output-directive "doc_out"
+                      :options          nil
+                      :additional-flags {:doc_opt "markdown,docs.md"}}]
+            result  (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
+        (are [flag] (contains-flag? result flag)
+                    "--plugin=/plugins/protoc-gen-doc"
+                    "--doc_out=/output"
+                    "--doc_opt=markdown,docs.md")))))
 
 (deftest protoc-gen-validate-plugin-test
   (testing "Protoc-gen-validate plugin generates validator files"
     (run-test!
-     (fn [tmp-dir-no-plugin]
-       ;; First, compile without the plugin - should NOT generate validator files
-       (let [config-no-plugin {:output-path (str tmp-dir-no-plugin)
-                               :proto-version "3.25.5"
-                               :repos '{:user-protos {:repo-type :filesystem
-                                                      :config {:path "./resources/test/proto_repo3"}
-                                                      :proto-paths ["protos"]
-                                                      :dependencies [protos/validation]}
-                                        :validate {:repo-type :git
-                                                   :config {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
-                                                            :rev "v1.3.0"}
-                                                   :proto-paths ["."]}}}]
-         (sut/generate-files! {} config-no-plugin)
-         (let [files (->> (.toFile tmp-dir-no-plugin)
-                          file-seq
-                          (filter #(not (.isDirectory ^File %)))
-                          (map #(.getName ^File %))
-                          set)]
-           (is (some #(= "User.java" %) files) "User.java should be generated")
-           (is (not (some #(.contains ^String % "Validator") files)) 
-               "No Validator files should be generated without the plugin")))))
-    
+      (fn [tmp-dir-no-plugin]
+        ;; First, compile without the plugin - should NOT generate validator files
+        (let [config-no-plugin {:output-path   (str tmp-dir-no-plugin)
+                                :proto-version "3.25.5"
+                                :repos         '{:user-protos {:repo-type    :filesystem
+                                                               :config       {:path "./resources/test/proto_repo3"}
+                                                               :proto-paths  ["protos"]
+                                                               :dependencies [protos/validation]}
+                                                 :validate    {:repo-type   :git
+                                                               :config      {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
+                                                                             :rev       "v1.3.0"}
+                                                               :proto-paths ["."]}}}]
+          (sut/generate-files! {} config-no-plugin)
+          (let [files (->> (.toFile tmp-dir-no-plugin)
+                           file-seq
+                           (filter #(not (.isDirectory ^File %)))
+                           (map #(.getName ^File %))
+                           set)]
+            (is (some #(= "User.java" %) files) "User.java should be generated")
+            (is (not (some #(.contains ^String % "Validator") files))
+                "No Validator files should be generated without the plugin")))))
+
     (run-test!
-     (fn [tmp-dir-with-plugin]
-       ;; Now compile WITH the plugin - SHOULD generate validator files
-       (let [config-with-plugin {:output-path (str tmp-dir-with-plugin)
-                                 :proto-version "3.25.5"
-                                 :plugins [{:name "protoc-gen-validate"
-                                           :version "1.3.0"
-                                           :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
-                                           :output-directive "validate_out"
-                                           :options {:lang "java"}}]
-                                 :repos '{:user-protos {:repo-type :filesystem
-                                                        :config {:path "./resources/test/proto_repo3"}
-                                                        :proto-paths ["protos"]
-                                                        :dependencies [protos/validation]}
-                                          :validate {:repo-type :git
-                                                     :config {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
-                                                              :rev "v1.3.0"}
-                                                     :proto-paths ["."]}}}]
-         (sut/generate-files! {} config-with-plugin)
-         (let [files (->> (.toFile tmp-dir-with-plugin)
-                          file-seq
-                          (filter #(not (.isDirectory ^File %)))
-                          (map #(.getName ^File %))
-                          set)]
-           (is (some #(= "User.java" %) files) "User.java should be generated")
-           (is (some #(= "UserValidator.java" %) files) 
-               "UserValidator.java should be generated with the plugin")))))))
+      (fn [tmp-dir-with-plugin]
+        ;; Now compile WITH the plugin - SHOULD generate validator files
+        (let [config-with-plugin {:output-path   (str tmp-dir-with-plugin)
+                                  :proto-version "3.25.5"
+                                  :plugins       [{:name             "protoc-gen-validate"
+                                                   :version          "1.3.0"
+                                                   :url-template     "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
+                                                   :output-directive "validate_out"
+                                                   :options          {:lang "java"}}]
+                                  :repos         '{:user-protos {:repo-type    :filesystem
+                                                                 :config       {:path "./resources/test/proto_repo3"}
+                                                                 :proto-paths  ["protos"]
+                                                                 :dependencies [protos/validation]}
+                                                   :validate    {:repo-type   :git
+                                                                 :config      {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
+                                                                               :rev       "v1.3.0"}
+                                                                 :proto-paths ["."]}}}]
+          (sut/generate-files! {} config-with-plugin)
+          (let [files (->> (.toFile tmp-dir-with-plugin)
+                           file-seq
+                           (filter #(not (.isDirectory ^File %)))
+                           (map #(.getName ^File %))
+                           set)]
+            (is (some #(= "User.java" %) files) "User.java should be generated")
+            (is (some #(= "UserValidator.java" %) files)
+                "UserValidator.java should be generated with the plugin")))))))
