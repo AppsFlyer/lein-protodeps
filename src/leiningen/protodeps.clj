@@ -462,7 +462,7 @@ and include this full error message to add support for your platform."
                 :compile-grpc? true
                 :repos         {:my-protos
                                 {:repo-type    :git
-                                 :proto-paths  ["products"]
+                                 :proto-paths  ["my"]
                                  :config       {:clone-url   "git@localhost:test/repo.git"
                                                 :rev         "mybranch"}
                                  :dependencies ["my/protos"]}}}))
