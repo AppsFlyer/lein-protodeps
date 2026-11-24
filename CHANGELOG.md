@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+* Renamed the `:af-proto` repo key to `:my-protos` and the `products/events` dependency to `"my/protos"` in the `(comment ...)` example in `src/leiningen/protodeps.clj`.
+* Updated the plugin version in the README usage snippet from `1.0.6` to `1.0.7`.
+
 ## [1.0.6] - 2025-08-07
 
 ### Fixed
