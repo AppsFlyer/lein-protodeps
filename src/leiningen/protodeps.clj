@@ -460,9 +460,9 @@ and include this full error message to add support for your platform."
                 :proto-version "3.12.4"
                 :grpc-version  "1.30.2"
                 :compile-grpc? true
-                :repos         {:af-proto
+                :repos         {:my-protos
                                 {:repo-type    :git
                                  :proto-paths  ["products"]
                                  :config       {:clone-url   "git@localhost:test/repo.git"
                                                 :rev         "mybranch"}
-                                 :dependencies [products/events]}}}))
+                                 :dependencies ["my/protos"]}}}))
