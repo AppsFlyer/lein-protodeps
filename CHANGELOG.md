@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Renamed the `:af-proto` repo key to `:my-protos` and the `products/events` dependency to `"my/protos"` in the `(comment ...)` example in `src/leiningen/protodeps.clj`.
 * Updated the plugin version in the README usage snippet from `1.0.6` to `1.0.7`.
 
+## [1.0.7] - 2025-08-07
+
+### Changed
+* No functional changes. Re-release of 1.0.6.
+
 ## [1.0.6] - 2025-08-07
 
 ### Fixed
@@ -33,4 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.5...v1.0.6
