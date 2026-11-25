@@ -20,9 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `${:version}` can be used in `:protoc-zip-url-template`
 
 ### Changed
-* Legacy gRPC configuration (`:compile-grpc?`, `:grpc-version`, `:grpc-exe-url-template`) is converted to a plugin entry internally. A `grpc-java_out` entry in `:plugins` takes precedence over `:compile-grpc?`. Otherwise `:compile-grpc?` without `:grpc-version` fails with a clear error.
+* Legacy gRPC configuration (`:compile-grpc?`, `:grpc-version`, `:grpc-exe-url-template`) is converted to a plugin entry internally. A `grpc-java_out` entry in `:plugins` takes precedence over `:compile-grpc?`. Otherwise `:compile-grpc?` without `:grpc-version` fails with a clear error, instead of a failed download from a URL with an empty version.
 * All plugins, including gRPC, install to `~/.lein-protodeps/plugins-installations/<plugin-name>/<version>/`. `~/.lein-protodeps/grpc-installations/` is no longer read, so gRPC is downloaded again once after upgrading.
-* Plugin downloads try multiple platform naming conventions (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds. Each distinct URL is tried once.
+* Plugin downloads try multiple platform naming conventions (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds
 * Plugins are passed to protoc as `--plugin=protoc-gen-X=<path>`, where `X_out` is the plugin's `:output-directive`
 * `protoc-opts` takes a vector of plugins instead of the `compile-grpc?` flag and gRPC plugin path. Code that calls it directly needs to be updated.
 * `os-name->os` and `os-arch->arch` map to vectors of naming variants instead of a single string
@@ -30,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Requires Leiningen 2.9.0 or newer, enforced with `:min-lein-version`
 
 ### Fixed
-* A plugin binary gets execute permission whenever it is missing, even when previously downloaded
-* A failed or partial plugin download is no longer cached as the plugin binary. The next run downloads it again.
+* Plugin binaries, including gRPC, get execute permission whenever it is missing, not only right after download
+* A failed or partial plugin download, including gRPC, is no longer cached as the plugin binary. The next run downloads it again.
+* Temp directory cleanup no longer follows symlinks, so a symlink in a cloned repo cannot cause files outside the temp directory to be deleted
 
 ## [1.0.7] - 2025-08-07
 
