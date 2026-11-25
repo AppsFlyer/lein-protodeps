@@ -7,33 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-* Renamed the `:af-proto` repo key to `:my-protos` and the `products/events` dependency to `"my_products/protos"` with `:proto-paths` `["my_products"]` in the `(comment ...)` example in `src/leiningen/protodeps.clj`.
-* Updated the plugin version in the README usage snippet from `1.0.6` to `1.0.7`.
-
-## [1.1.0] - 2025-12-09
+## [1.1.0] - 2026-11-25
 
 ### Added
-* Generic protoc plugin support via `:plugins` configuration option
-* Auto-download plugins from configurable URL templates
-* Plugin-specific options support (e.g., `lang=java` for protoc-gen-validate)
-* Multiple plugins can run simultaneously
-* Test coverage for plugin functionality
+* Generic protoc plugin support via the `:plugins` configuration option
+* Plugins are downloaded from configurable URL templates
+* Plugin-specific options (e.g., `lang=java` for protoc-gen-validate)
+* Multiple plugins can run in the same build
 * Plugin `:additional-flags` configuration option for plugins requiring extra protoc flags (e.g., `protoc-gen-doc`'s `--doc_opt`)
+* `:plugins` is validated with `clojure.spec` before anything is downloaded, and the error names the missing or malformed key
+* `${:version}` can be used in `:protoc-zip-url-template`
+* Tests for plugin download, URL variant fallback, validation and protoc option building
 
 ### Changed
-* `protoc-opts` function now accepts a vector of plugins
-* Legacy gRPC configuration converted to plugin format internally
-* Unified plugin installation directory to `~/.lein-protodeps/plugins-installations/<plugin-name>/<version>/` for all plugins including gRPC
-* Plugin downloads try multiple platform naming conventions automatically (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds
-
-### Removed
-* Removed `get-grpc-plugin!` and `download-grpc-plugin!` functions
+* Legacy gRPC configuration (`:compile-grpc?`, `:grpc-version`, `:grpc-exe-url-template`) is converted to a plugin entry internally. A `grpc-java_out` entry in `:plugins` takes precedence over `:compile-grpc?`.
+* All plugins, including gRPC, install to `~/.lein-protodeps/plugins-installations/<plugin-name>/<version>/`. `~/.lein-protodeps/grpc-installations/` is no longer read, so gRPC is downloaded again once after upgrading.
+* Plugin downloads try multiple platform naming conventions (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds
+* Plugins are passed to protoc as `--plugin=protoc-gen-X=<path>`, where `X_out` is the plugin's `:output-directive`
+* `protoc-opts` takes a vector of plugins instead of the `compile-grpc?` flag and gRPC plugin path. Code that calls it directly needs to be updated.
+* `os-name->os` and `os-arch->arch` map to vectors of naming variants instead of a single string
+* Requires Leiningen 2.9.0 or newer
 
 ### Fixed
 * Plugin binaries always have execute permissions set, even when previously downloaded
 * Plugin downloads handle `.tar.gz`, `.gz`, and plain executable formats
-* Plugin downloads try all platform name variants before failing
+* A failed or partial plugin download is no longer cached as the plugin binary. The next run downloads it again.
 
 ## [1.0.7] - 2025-08-07
 
@@ -62,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...v1.1.0
 [1.0.7]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.5...v1.0.6

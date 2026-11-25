@@ -51,7 +51,7 @@ An example configuration:
                    :proto-version ~proto-version
                    :grpc-version  ~grpc-version
                    :compile-grpc? true ;; whether to activate the gRPC plugin during the stub generation process
-                   ;; Optional: protoc plugins for validation, documentation, etc.
+                   ; Optional: protoc plugins for validation, documentation, etc.
                    :plugins [{:name "protoc-gen-validate"
                              :version "1.3.0"
                              :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
@@ -116,15 +116,18 @@ Add a `:plugins` vector to your configuration:
 
 ### Plugin Configuration Keys
 
-- `:name` (required) - The plugin executable name (e.g., `"protoc-gen-validate"`)
-- `:version` (required) - The plugin version to download
-- `:url-template` (required) - URL template for downloading the plugin binary. Interpolation variables:
-  - `${:version}` - Plugin version (`${:semver}` also works for backward compatibility)
-  - `${:os-name}` - Host OS name (tries `osx`/`darwin` for macOS, `linux` for Linux)
-  - `${:os-arch}` - Host architecture (tries `x86_64`/`amd64` for x64, `aarch_64`/`arm64` for ARM64)
-- `:output-directive` (required) - The protoc output flag name without `--` (e.g., `"validate_out"` becomes `--validate_out`)
-- `:options` (optional) - Map of plugin-specific options formatted as `key=value` pairs in the output directive
-- `:additional-flags` (optional) - Map of additional protoc flags (e.g., `{:doc_opt "markdown,docs.md"}` becomes `--doc_opt=markdown,docs.md`)
+- `:name` (required): the plugin binary's file name (e.g., `"protoc-gen-validate"`). It names the install directory, and for `.tar.gz` downloads it must match the binary's path at the root of the archive.
+- `:version` (required): the plugin version to download.
+- `:url-template` (required): URL template for downloading the plugin binary. Interpolation variables:
+  - `${:version}`: plugin version (`${:semver}` also works for backward compatibility)
+  - `${:major}`, `${:minor}`, `${:patch}`: version components, when the version has the form `x.y.z`
+  - `${:os-name}`: host OS name (tries `osx`/`darwin` for macOS, `linux` for Linux)
+  - `${:os-arch}`: host architecture (tries `x86_64`/`amd64` for x64, `aarch_64`/`arm64` for ARM64)
+- `:output-directive` (required): the protoc output flag name without `--`, ending in `_out` (e.g., `"validate_out"` becomes `--validate_out`). protoc pairs `--X_out` with a plugin named `protoc-gen-X`, so the downloaded binary is passed to protoc as `--plugin=protoc-gen-X=<path>`.
+- `:options` (optional): map of plugin-specific options formatted as `key=value` pairs in the output directive.
+- `:additional-flags` (optional): map of additional protoc flags (e.g., `{:doc_opt "markdown,docs.md"}` becomes `--doc_opt=markdown,docs.md`).
+
+The `:plugins` vector is validated before anything is downloaded. A missing required key, an `:output-directive` that does not end in `_out`, non-map `:options`, or two plugins with the same `:output-directive` fail with a message that names the problem.
 
 The library tries multiple naming conventions automatically. On macOS ARM64, it generates and tries URLs with `osx`/`aarch_64`, then `darwin`/`arm64` until one succeeds.
 
@@ -150,10 +153,12 @@ Execute permissions are set automatically on all downloaded binaries.
 ```
 
 On macOS ARM64, the library tries these URLs in order:
-1. `protoc-gen-validate_1.3.0_osx_aarch_64.tar.gz` (protoc style) - not found
-2. `protoc-gen-validate_1.3.0_osx_arm64.tar.gz` - not found
-3. `protoc-gen-validate_1.3.0_darwin_aarch_64.tar.gz` - not found
-4. `protoc-gen-validate_1.3.0_darwin_arm64.tar.gz` (Go style) - success!
+1. `protoc-gen-validate_1.3.0_osx_aarch_64.tar.gz` (protoc style, not published)
+2. `protoc-gen-validate_1.3.0_osx_arm64.tar.gz` (not published)
+3. `protoc-gen-validate_1.3.0_darwin_aarch_64.tar.gz` (not published)
+4. `protoc-gen-validate_1.3.0_darwin_arm64.tar.gz` (Go style, downloaded)
+
+A download is written to a staging directory and moved into place only when it completes, so a failed or partial download is retried on the next run.
 
 Generated protoc command:
 ```bash
@@ -193,18 +198,18 @@ The [protoc-gen-doc](https://github.com/pseudomuto/protoc-gen-doc) plugin uses `
 The `:compile-grpc?` and `:grpc-version` options are syntactic sugar for adding gRPC to the `:plugins` vector. These two configurations are equivalent:
 
 ```clj
-;; Using legacy config (syntactic sugar)
+; Using legacy config (syntactic sugar)
 :compile-grpc? true
 :grpc-version "1.68.1"
 
-;; Equivalent plugin config
+; Equivalent plugin config
 :plugins [{:name "protoc-gen-grpc-java"
           :version "1.68.1"
-          :url-template "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}_${:os-arch}.exe"
+          :url-template "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}-${:os-arch}.exe"
           :output-directive "grpc-java_out"}]
 ```
 
-You can use both forms together. When `:compile-grpc?` is true, gRPC is automatically added to the plugins list.
+You can use both forms together. When `:compile-grpc?` is true, gRPC is added to the plugins list. If `:plugins` already has a `grpc-java_out` entry, that entry is used and `:compile-grpc?` is ignored with a warning.
 
 ## protoc and gRPC binaries retrieval
 
@@ -218,17 +223,17 @@ Override these by setting `:protoc-zip-url-template` or `:grpc-exe-url-template`
 
 URL templates support these interpolation variables:
 
-* `${:version}` or `${:semver}` - version string from `:protoc-version` or `:grpc-version`
-* `${:major}`, `${:minor}`, `${:patch}` - version components
-* `${:os-name}` - host OS (`linux`, `osx`)
-* `${:os-arch}` - host architecture (`x86_64`, `aarch_64`)
+* `${:version}` or `${:semver}`: version string from `:proto-version` or `:grpc-version`
+* `${:major}`, `${:minor}`, `${:patch}`: version components
+* `${:os-name}`: host OS (`linux`, `osx`)
+* `${:os-arch}`: host architecture (`x86_64`, `aarch_64`)
 
 Example override:
 ```clj
-:grpc-exe-url-template "https://my-mirror.com/grpc/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}_${:os-arch}.exe"
+:grpc-exe-url-template "https://my-mirror.com/grpc/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}-${:os-arch}.exe"
 ```
 
-Note: Authentication is not supported for custom URLs.
+**Note:** Authentication is not supported for custom URLs.
 
 
 ## Configuration Reference

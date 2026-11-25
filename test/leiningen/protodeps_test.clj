@@ -1,9 +1,13 @@
 (ns leiningen.protodeps-test
-  (:require [clojure.test :refer [are deftest is testing]]
+  (:require [clojure.java.io :as io]
+            [clojure.java.shell :as sh]
+            [clojure.test :refer [are deftest is testing]]
             [leiningen.protodeps :as sut])
-  (:import (java.io File)
-           (java.nio.file Path)
-           (java.util Properties)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.io ByteArrayOutputStream File)
+           (java.nio.file Files Path)
+           (java.util Arrays Properties)
+           (java.util.zip GZIPOutputStream)))
 
 (defn- run-test! [test]
   (let [^Path tmp-dir (sut/create-temp-dir!)]
@@ -122,22 +126,28 @@
   (testing "Format plugin options as key=value pairs"
     (are [expected input] (= expected (@#'sut/format-plugin-options input))
                           "lang=java" {:lang "java"}
-                          "lang=java,paths=source_relative" {:lang "java" :paths "source_relative"}
+                          "lang=java,paths=source_relative" {:lang  "java"
+                                                             :paths "source_relative"}
                           nil {}
                           nil nil)))
 
 (deftest plugin-url-interpolation-test
   (testing "Plugin URL interpolation with platform and version variables"
-    (let [platform {:os-name "linux" :os-arch "x86_64" :version "1.0.2"}
+    (let [platform {:os-name "linux"
+                    :os-arch "x86_64"
+                    :version "1.0.2"}
           template "https://example.com/releases/v${:version}/plugin-${:version}-${:os-name}-${:os-arch}"]
       (is (= "https://example.com/releases/v1.0.2/plugin-1.0.2-linux-x86_64"
              (@#'sut/interpolate platform template))))))
 
 (deftest merge-legacy-grpc-config-test
   (testing "Merge legacy gRPC config with new plugins"
-    (let [grpc-version {:semver "1.30.2" :os-name "linux" :os-arch "x86_64"}]
+    (let [grpc-version {:semver  "1.30.2"
+                        :os-name "linux"
+                        :os-arch "x86_64"}]
       (testing "When compile-grpc? is true, add gRPC as a plugin"
-        (let [config {:compile-grpc? true :grpc-version "1.30.2"}
+        (let [config {:compile-grpc? true
+                      :grpc-version  "1.30.2"}
               result (@#'sut/merge-legacy-grpc-config config grpc-version)]
           (is (= 1 (count result)))
           (is (= "protoc-gen-grpc-java" (:name (first result))))
@@ -186,9 +196,9 @@
         (are [flag] (contains-flag? result flag)
                     "--proto_path=/path/to/protos"
                     "--java_out=/output"
-                    "--plugin=/plugins/protoc-gen-grpc-java"
+                    "--plugin=protoc-gen-grpc-java=/plugins/protoc-gen-grpc-java"
                     "--grpc-java_out=/output"
-                    "--plugin=/plugins/protoc-gen-validate"
+                    "--plugin=protoc-gen-validate=/plugins/protoc-gen-validate"
                     "--validate_out=lang=java:/output"
                     "/protos/test.proto")))
 
@@ -208,15 +218,116 @@
                       :additional-flags {:doc_opt "markdown,docs.md"}}]
             result  (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
         (are [flag] (contains-flag? result flag)
-                    "--plugin=/plugins/protoc-gen-doc"
+                    "--plugin=protoc-gen-doc=/plugins/protoc-gen-doc"
                     "--doc_out=/output"
                     "--doc_opt=markdown,docs.md")))))
+
+(deftest merge-legacy-grpc-config-precedence-test
+  (testing "A grpc-java_out entry in :plugins takes precedence over :compile-grpc?"
+    (let [grpc-version {:semver  "1.68.1"
+                        :os-name "linux"
+                        :os-arch "x86_64"}
+          explicit     {:name             "protoc-gen-grpc-java"
+                        :version          "1.68.1"
+                        :url-template     "https://mirror.example.com/protoc-gen-grpc-java.exe"
+                        :output-directive "grpc-java_out"}
+          config       {:compile-grpc? true
+                        :grpc-version  "1.68.1"
+                        :plugins       [explicit]}]
+      (is (= [explicit] (@#'sut/merge-legacy-grpc-config config grpc-version))))))
+
+(deftest generate-plugin-urls-test
+  (let [platform {:os-name          "osx"
+                  :os-arch          "aarch_64"
+                  :os-name-variants ["osx" "darwin"]
+                  :os-arch-variants ["aarch_64"]}]
+    (testing "Templates can use ${:major}, ${:minor} and ${:patch} for x.y.z versions"
+      (is (= ["https://mirror.example.com/1.68.1/grpc-1.68-osx-aarch_64.exe"
+              "https://mirror.example.com/1.68.1/grpc-1.68-darwin-aarch_64.exe"]
+             (@#'sut/generate-plugin-urls
+               "https://mirror.example.com/${:major}.${:minor}.${:patch}/grpc-${:major}.${:minor}-${:os-name}-${:os-arch}.exe"
+               platform
+               "1.68.1"))))
+    (testing "Other version formats only fill ${:version}"
+      (is (= ["https://example.com/v2024.1-rc1/osx"
+              "https://example.com/v2024.1-rc1/darwin"]
+             (@#'sut/generate-plugin-urls "https://example.com/v${:version}/${:os-name}" platform "2024.1-rc1"))))))
+
+(deftest protoc-url-template-version-test
+  (testing "Protoc URL templates can use ${:version}"
+    (let [proto-version (merge {:os-name "linux"
+                                :os-arch "x86_64"}
+                               (@#'sut/parse-semver "3.25.5"))]
+      (is (= "https://mirror.example.com/3.25.5/protoc-3.25.5-linux-x86_64.zip"
+             (@#'sut/interpolate proto-version
+               "https://mirror.example.com/${:version}/protoc-${:version}-${:os-name}-${:os-arch}.zip"))))))
+
+(defn- gzip-bytes ^bytes [^bytes content]
+  (let [out (ByteArrayOutputStream.)]
+    (with-open [gz (GZIPOutputStream. out)]
+      (.write gz content))
+    (.toByteArray out)))
+
+(deftest get-plugin-test
+  (run-test!
+    (fn [^Path tmp-dir]
+      (let [home        (str (.resolve tmp-dir "home"))
+            releases    (doto (.toFile (.resolve tmp-dir "releases")) (.mkdirs))
+            content     (.getBytes "#!/bin/sh\necho plugin\n")
+            ; 64KB that does not compress well, so cutting the .gz in half truncates the data stream
+            big-content (byte-array (map #(unchecked-byte (* % 7919)) (range 65536)))
+            platform    {:os-name          "missing"
+                         :os-arch          "x86_64"
+                         :os-name-variants ["missing" "linux"]
+                         :os-arch-variants ["x86_64"]}
+            url-for     #(str "file://" (.getAbsolutePath releases) "/" %)
+            config      (fn [plugin-name url-template]
+                          {:name             plugin-name
+                           :version          "1.0.0"
+                           :url-template     url-template
+                           :output-directive "test_out"})
+            plugin-file #(io/file home "plugins-installations" % "1.0.0" %)
+            get-plugin! #(@#'sut/get-plugin! home platform %)]
+        (io/copy content (io/file releases "linux.bin"))
+        (io/copy (gzip-bytes content) (io/file releases "linux.gz"))
+        (let [gz-bytes (gzip-bytes big-content)]
+          (io/copy (Arrays/copyOf gz-bytes (quot (alength gz-bytes) 2))
+                   (io/file releases "linux-truncated.gz")))
+        (let [tar-src (doto (.toFile (.resolve tmp-dir "tar-src")) (.mkdirs))]
+          (io/copy content (io/file tar-src "protoc-gen-tar"))
+          (is (zero? (:exit (sh/sh "tar" "-czf" (str (io/file releases "linux.tar.gz"))
+                                   "-C" (str tar-src) "protoc-gen-tar")))))
+
+        (testing "Downloads plain, .gz and .tar.gz plugins, falling back across URL variants"
+          (are [plugin-name url-suffix]
+            (let [path (get-plugin! (config plugin-name (url-for url-suffix)))]
+              (and (= (str (plugin-file plugin-name)) path)
+                   (Arrays/equals content (Files/readAllBytes (.toPath (io/file path))))
+                   (.canExecute (io/file path))
+                   (= [plugin-name] (vec (.list (.getParentFile (io/file path)))))))
+            "protoc-gen-plain" "${:os-name}.bin"
+            "protoc-gen-gz" "${:os-name}.gz"
+            "protoc-gen-tar" "${:os-name}.tar.gz"))
+
+        (testing "A truncated download is not cached"
+          (let [plugin-name "protoc-gen-truncated"
+                error       (try
+                              (get-plugin! (config plugin-name (url-for "${:os-name}-truncated.gz")))
+                              nil
+                              (catch ExceptionInfo e
+                                e))]
+            (is (= "Failed to download plugin from any URL" (some-> error .getMessage)))
+            (is (not (.exists (plugin-file plugin-name))))
+            (is (empty? (.list (.getParentFile (plugin-file plugin-name)))))
+            (testing "and the next run downloads again"
+              (is (= (str (plugin-file plugin-name))
+                     (get-plugin! (config plugin-name (url-for "${:os-name}.gz"))))))))))))
 
 (deftest protoc-gen-validate-plugin-test
   (testing "Protoc-gen-validate plugin generates validator files"
     (run-test!
       (fn [tmp-dir-no-plugin]
-        ;; First, compile without the plugin - should NOT generate validator files
+        ; Without the plugin, no validator files are generated
         (let [config-no-plugin {:output-path   (str tmp-dir-no-plugin)
                                 :proto-version "3.25.5"
                                 :repos         '{:user-protos {:repo-type    :filesystem
@@ -239,7 +350,7 @@
 
     (run-test!
       (fn [tmp-dir-with-plugin]
-        ;; Now compile WITH the plugin - SHOULD generate validator files
+        ; With the plugin, validator files are generated
         (let [config-with-plugin {:output-path   (str tmp-dir-with-plugin)
                                   :proto-version "3.25.5"
                                   :plugins       [{:name             "protoc-gen-validate"

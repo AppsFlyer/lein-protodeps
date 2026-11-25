@@ -4,10 +4,11 @@
             [clojure.set :as sets]
             [clojure.string :as strings]
             [clojure.tools.cli :as cli]
-            [leiningen.core.main :as lein])
+            [leiningen.core.main :as lein]
+            [leiningen.protodeps.spec :as spec])
   (:import (java.io File FileNotFoundException)
-           (java.nio.file Files)
-           (java.nio.file Path)
+           (java.nio.file CopyOption Files)
+           (java.nio.file Path StandardCopyOption)
            (java.nio.file.attribute FileAttribute PosixFilePermission)
            (java.util HashSet)
            (java.util.zip GZIPInputStream ZipEntry ZipInputStream)))
@@ -45,10 +46,21 @@
                                              (strings/split semver #"\."))]
       (when-not (= (count parts) 3)
         (throw (ex-info "invalid semver, expected major.minor.patch" {:version semver})))
-      {:major  major
-       :minor  minor
-       :patch  patch
-       :semver semver})))
+      {:major   major
+       :minor   minor
+       :patch   patch
+       :semver  semver
+       :version semver})))
+
+
+(defn- version-parts
+  "Split a plugin version into :major, :minor and :patch when it has the form x.y.z.
+   Returns nil for other version formats, so their URL templates only get ${:version}."
+  [version]
+  (when-let [[_ major minor patch] (re-matches #"(\d+)\.(\d+)\.(\d+)" version)]
+    {:major major
+     :minor minor
+     :patch patch}))
 
 
 (defn- interpolate [m s]
@@ -168,14 +180,13 @@
                "\nPlatform is not currently supported.\n
 Please open an issue at https://github.com/AppsFlyer/lein-protodeps/issues
 and include this full error message to add support for your platform."
-               {:os.name raw-os-name :os.arch raw-os-arch})))
-    ; Use first variant as default (for backward compatability and protoc URLs)
-    ; Store all variants for plugin downloads that may need alternatives
+               {:os.name raw-os-name
+                :os.arch raw-os-arch})))
+    ; The first variant matches protoc's release naming. Plugin downloads try every variant.
     (let [platform {:os-name          (first os-variants)
                     :os-arch          (first arch-variants)
                     :os-name-variants os-variants
-                    :os-arch-variants arch-variants
-                    :semver           nil}]                 ; Will be set later for proto/grpc versions
+                    :os-arch-variants arch-variants}]
       (get platform-alternatives platform platform))))
 
 (defn- get-protoc-release [{:keys [semver os-name os-arch]}]
@@ -195,36 +206,40 @@ and include this full error message to add support for your platform."
     (unzip! inp dst)))
 
 (defn- try-download-plugin!
-  "Attempt to download a plugin from a single URL. Returns true on success, false on failure."
+  "Download a plugin from a single URL to plugin-file. Returns true on success, false on failure."
   [plugin-name url plugin-file]
   (try
     (println "protodeps: Trying to download" plugin-name "from" url "...")
-    (if (strings/ends-with? url ".tar.gz")
-      (let [plugin-dir (.getParent (io/file plugin-file))
-            process    (-> (ProcessBuilder. ["tar" "-xzf" "-" "-C" plugin-dir plugin-name])
-                           (.redirectErrorStream true)
-                           (.start))]
-        (with-open [input  (io/input-stream url)
-                    output (.getOutputStream process)]
-          (io/copy input output))
-        (let [exit (.waitFor process)]
-          (when-not (zero? exit)
-            (let [err (slurp (.getInputStream process))]
-              (println "protodeps: Failed to extract tar.gz:" err)
-              (throw (ex-info "Failed to extract tar.gz" {:exit exit :error err}))))))
-      (with-open [raw-input (io/input-stream url)
-                  input     (if (strings/ends-with? url ".gz")
-                              (GZIPInputStream. raw-input)
-                              raw-input)
-                  output    (io/output-stream (io/file plugin-file))]
-        (io/copy input output)))
-    (println "protodeps: Successfully downloaded" plugin-name "to" plugin-file)
+    (with-open [raw-input (io/input-stream url)]
+      (if (strings/ends-with? url ".tar.gz")
+        (let [plugin-dir (.getParent (io/file plugin-file))
+              process    (-> (ProcessBuilder. ["tar" "-xzf" "-" "-C" plugin-dir plugin-name])
+                             (.redirectErrorStream true)
+                             (.start))]
+          (try
+            (with-open [output (.getOutputStream process)]
+              (io/copy raw-input output))
+            (let [exit (.waitFor process)]
+              (when-not (zero? exit)
+                (let [err (slurp (.getInputStream process))]
+                  (println "protodeps: Failed to extract tar.gz:" err)
+                  (throw (ex-info "Failed to extract tar.gz"
+                                  {:exit  exit
+                                   :error err})))))
+            (finally
+              (.destroy process))))
+        (with-open [input  (if (strings/ends-with? url ".gz")
+                             (GZIPInputStream. raw-input)
+                             raw-input)
+                    output (io/output-stream (io/file plugin-file))]
+          (io/copy input output))))
+    (println "protodeps: Downloaded" plugin-name "from" url)
     true
     (catch FileNotFoundException _
-      (println "protodeps: URL not found:" url)
+      (print-warning "URL not found:" url)
       false)
     (catch Exception e
-      (println "protodeps: Failed to download/extract from" url ":" (.getMessage e))
+      (print-warning "Failed to download/extract from" url ":" (.getMessage e))
       false)))
 
 (defn- download-plugin!
@@ -232,10 +247,12 @@ and include this full error message to add support for your platform."
    Throws an exception if all URLs fail."
   [plugin-name urls plugin-file]
   (loop [[url & remaining] urls]
-    (if url
-      (when (not (try-download-plugin! plugin-name url plugin-file))
-        (recur remaining))
-      (throw (ex-info "Failed to download plugin from any URL" {:plugin plugin-name :urls urls})))))
+    (if-not url
+      (throw (ex-info "Failed to download plugin from any URL"
+                      {:plugin plugin-name
+                       :urls   urls}))
+      (when-not (try-download-plugin! plugin-name url plugin-file)
+        (recur remaining)))))
 
 (defn run-protoc-and-report! [protoc-path opts]
   (let [{:keys [out err]} (run-sh! protoc-path opts)]
@@ -359,22 +376,24 @@ and include this full error message to add support for your platform."
     (.delete ^File file)))
 
 (defn- format-plugin-options
-  "Convert a map of plugin options to a semicolon-separated key=value string"
+  "Convert a map of plugin options to a comma-separated key=value string"
   [options]
   (when (seq options)
     (strings/join "," (map (fn [[k v]] (str (name k) "=" v)) options))))
 
 (defn- add-plugin-opts
-  "Add protoc options for a single plugin"
+  "Add protoc options for a single plugin.
+   protoc pairs `--X_out` with the plugin named `protoc-gen-X`, so the plugin is passed under that name."
   [protoc-opts output-path {:keys [plugin-path output-directive options additional-flags]}]
   (let [formatted-opts (format-plugin-options options)
         output-value   (if formatted-opts
                          (str formatted-opts ":" output-path)
                          output-path)
+        protoc-name    (str "protoc-gen-" (strip-suffix "_out" output-directive))
         additional     (when additional-flags
                          (mapv (fn [[k v]] (long-opt (name k) v)) additional-flags))]
     (-> protoc-opts
-        (conj (long-opt "plugin" plugin-path))
+        (conj (long-opt "plugin" (str protoc-name "=" plugin-path)))
         (conj (long-opt output-directive output-value))
         (into (or additional [])))))
 
@@ -415,10 +434,12 @@ and include this full error message to add support for your platform."
         arch-variants (:os-arch-variants platform)]
     (for [os-name os-variants
           os-arch arch-variants]
-      (interpolate (merge platform {:version plugin-version
-                                    :semver  plugin-version ; For backward compat with grpc-release-tpl
-                                    :os-name os-name
-                                    :os-arch os-arch})
+      (interpolate (merge platform
+                          (version-parts plugin-version)
+                          {:version plugin-version
+                           :semver  plugin-version          ; For backward compat with grpc-release-tpl
+                           :os-name os-name
+                           :os-arch os-arch})
                    url-template))))
 
 (defn- get-plugin!
@@ -432,23 +453,40 @@ and include this full error message to add support for your platform."
         plugin-path      (append-dir plugin-dir plugin-name)]
     (when-not (.exists ^File (io/file plugin-path))
       (mkdir! plugin-dir)
-      (let [plugin-urls (generate-plugin-urls (:url-template plugin-config) platform plugin-version)]
-        (download-plugin! plugin-name plugin-urls plugin-path)))
+      ; Download into a staging dir and move into place only on success,
+      ; so a failed or partial download never ends up at plugin-path.
+      (let [plugin-urls (generate-plugin-urls (:url-template plugin-config) platform plugin-version)
+            staging-dir (create-temp-dir! (.toPath (io/file plugin-dir)))
+            staged-path (append-dir staging-dir plugin-name)]
+        (try
+          (download-plugin! plugin-name plugin-urls staged-path)
+          (Files/move (.toPath (io/file staged-path))
+                      (.toPath (io/file plugin-path))
+                      (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE]))
+          (finally
+            (cleanup-dir! staging-dir)))))
     (set-protoc-permissions! plugin-path)
     plugin-path))
 
 (defn- merge-legacy-grpc-config
   "Convert legacy :compile-grpc? and :grpc-version config to new plugin format.
-   Merges with any plugins specified in :plugins config."
+   Merges with any plugins specified in :plugins config.
+   A gRPC entry in :plugins takes precedence over :compile-grpc?."
   [config grpc-version]
   (let [configured-plugins (or (:plugins config) [])
         grpc-plugin-config (when (and (:compile-grpc? config) grpc-version)
                              {:name             "protoc-gen-grpc-java"
-                              :version          (:semver grpc-version) ; Extract semver string from parsed version
+                              :version          (:semver grpc-version)
                               :url-template     (or (:grpc-exe-url-template config)
                                                     grpc-release-tpl)
                               :output-directive "grpc-java_out"})]
     (cond
+      (and grpc-plugin-config
+           (some #(= (:output-directive grpc-plugin-config) (:output-directive %)) configured-plugins))
+      (do
+        (print-warning ":compile-grpc? is true but :plugins already has a grpc-java_out plugin. Using the :plugins entry.")
+        configured-plugins)
+
       grpc-plugin-config
       (cons grpc-plugin-config configured-plugins)
 
@@ -474,10 +512,9 @@ and include this full error message to add support for your platform."
         proto-version      (merge platform (parse-semver (:proto-version config)))
         grpc-version       (when (:grpc-version config)
                              (merge platform (parse-semver (:grpc-version config))))
+        _                  (spec/validate-plugins! (or (:plugins config) []))
         protoc             (get-protoc! home-dir config proto-version)
-        ; Merge legacy gRPC config with new plugins config
         plugin-configs     (merge-legacy-grpc-config config grpc-version)
-        ; Download and prepare all plugins
         plugins            (mapv (fn [plugin-config]
                                    (let [plugin-path (get-plugin! home-dir platform plugin-config)]
                                      {:plugin-path      plugin-path
