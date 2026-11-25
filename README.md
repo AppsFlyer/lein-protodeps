@@ -56,7 +56,7 @@ An example configuration:
                              :version "1.3.0"
                              :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
                              :output-directive "validate_out"
-                             :options {:lang "java"}}]
+                             :options "lang=java"}]
                    ;; Repositories configuration. Each entry in this map is an entry mapping a logical repository name
                    ;; to its configuration.
                    :repos         {:af-schemas {:repo-type :git ;; a git repo
@@ -110,7 +110,7 @@ Add a `:plugins` vector to your configuration:
                            :version "1.3.0"
                            :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
                            :output-directive "validate_out"
-                           :options {:lang "java"}}]
+                           :options "lang=java"}]
                  :repos {...}}
 ```
 
@@ -124,9 +124,9 @@ Add a `:plugins` vector to your configuration:
   - `${:os-name}`: host OS name (tries `osx`/`darwin` for macOS, `linux` for Linux)
   - `${:os-arch}`: host architecture (tries `x86_64`/`amd64` for x64, `aarch_64`/`arm64` for ARM64)
 - `:output-directive` (required): the protoc output flag name without `--`, ending in `_out` (e.g., `"validate_out"` becomes `--validate_out`). protoc pairs `--X_out` with a plugin named `protoc-gen-X`, so the downloaded binary is passed to protoc as `--plugin=protoc-gen-X=<path>`.
-- `:options` (optional): plugin parameters, passed as `--X_opt=...` for an `X_out` directive. A map becomes comma-separated `key=value` pairs (e.g., `{:lang "java"}` becomes `--validate_opt=lang=java`), and a string is passed as is (e.g., `"markdown,docs.md"` becomes `--doc_opt=markdown,docs.md`). Requires protoc 3.2.0 or newer.
+- `:options` (optional): plugin parameters as a string, passed as is to `--X_opt=...` for an `X_out` directive (e.g., `"lang=java"` becomes `--validate_opt=lang=java`, and `"markdown,docs.md"` becomes `--doc_opt=markdown,docs.md`). Requires protoc 3.2.0 or newer.
 
-The `:plugins` vector is validated before anything is downloaded. A missing required key, an `:output-directive` that does not end in `_out`, `:options` that is not a map or a string, or two plugins with the same `:output-directive` fail with a message that names the problem.
+The `:plugins` vector is validated before anything is downloaded. A missing required key, an `:output-directive` that does not end in `_out`, `:options` that is not a string, or two plugins with the same `:output-directive` fail with a message that names the problem.
 
 The library tries multiple naming conventions automatically. On macOS ARM64, it generates and tries URLs with `osx`/`aarch_64`, then `darwin`/`arm64` until one succeeds.
 
@@ -148,7 +148,7 @@ Execute permissions are set automatically on all downloaded binaries.
           :version "1.3.0"
           :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
           :output-directive "validate_out"
-          :options {:lang "java"}}]
+          :options "lang=java"}]
 ```
 
 On macOS ARM64, the library tries these URLs in order:
@@ -182,7 +182,7 @@ You can configure multiple plugins together. For example, using gRPC, validation
                            :version "1.3.0"
                            :url-template "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
                            :output-directive "validate_out"
-                           :options {:lang "java"}}
+                           :options "lang=java"}
                           {:name "protoc-gen-doc"
                            :version "1.5.1"
                            :url-template "https://github.com/pseudomuto/protoc-gen-doc/releases/download/v${:version}/protoc-gen-doc_${:version}_${:os-name}_${:os-arch}.tar.gz"
@@ -190,8 +190,6 @@ You can configure multiple plugins together. For example, using gRPC, validation
                            :options "markdown,docs.md"}]
                  :repos {...}}
 ```
-
-The [protoc-gen-doc](https://github.com/pseudomuto/protoc-gen-doc) plugin takes positional parameters (`FORMAT,FILE`), so its `:options` is a string.
 
 ### Backward Compatibility
 

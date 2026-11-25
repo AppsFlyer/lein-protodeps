@@ -8,7 +8,7 @@
                :version          "1.3.0"
                :url-template     "https://example.com/${:version}"
                :output-directive "validate_out"
-               :options          {:lang "java"}}]
+               :options          "lang=java"}]
     (testing "Complete plugin configs are accepted"
       (is (= [valid] (sut/validate-plugins! [valid])))
       (is (= [] (sut/validate-plugins! [])))
@@ -20,7 +20,7 @@
                      [(dissoc valid :output-directive)]
                      [(dissoc valid :version)]
                      [(dissoc valid :name)]
-                     [(assoc valid :options 42)]
+                     [(assoc valid :options {:lang "java"})]
                      [(assoc valid :options "")]
                      [(assoc valid :output-directive "validate")]
                      [valid (assoc valid :name "protoc-gen-validate-copy")]

@@ -122,16 +122,6 @@
       (is (not= incorrect-url generated-url)
           "Generated URL should NOT match the incorrect format with aarch64"))))
 
-(deftest plugin-options-formatting-test
-  (testing "Format map options as key=value pairs and pass string options as is"
-    (are [expected input] (= expected (@#'sut/format-plugin-options input))
-                          "lang=java" {:lang "java"}
-                          "markdown,docs.md" "markdown,docs.md"
-                          "lang=java,paths=source_relative" {:lang  "java"
-                                                             :paths "source_relative"}
-                          nil {}
-                          nil nil)))
-
 (deftest plugin-url-interpolation-test
   (testing "Plugin URL interpolation with platform and version variables"
     (let [platform {:os-name "linux"
@@ -192,7 +182,7 @@
                       :options          nil}
                      {:plugin-path      "/plugins/protoc-gen-validate"
                       :output-directive "validate_out"
-                      :options          {:lang "java"}}]
+                      :options          "lang=java"}]
             result  (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
         (are [flag] (contains-flag? result flag)
                     "--proto_path=/path/to/protos"
@@ -359,7 +349,7 @@
                                                    :version          "1.3.0"
                                                    :url-template     "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
                                                    :output-directive "validate_out"
-                                                   :options          {:lang "java"}}]
+                                                   :options          "lang=java"}]
                                   :repos         '{:user-protos {:repo-type    :filesystem
                                                                  :config       {:path "./resources/test/proto_repo3"}
                                                                  :proto-paths  ["protos"]

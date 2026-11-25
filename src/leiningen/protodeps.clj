@@ -1,8 +1,8 @@
 (ns leiningen.protodeps
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
-            [clojure.set :as sets]
-            [clojure.string :as strings]
+            [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [leiningen.core.main :as lein]
             [leiningen.protodeps.spec :as spec])
@@ -28,7 +28,7 @@
   (apply print-err "protodeps: WARNING:" s))
 
 (defn append-dir [parent & children]
-  (strings/join File/separator (concat [parent] children)))
+  (str/join File/separator (concat [parent] children)))
 
 
 (defn create-temp-dir!
@@ -43,7 +43,7 @@
 (defn- parse-semver [semver]
   (when semver
     (let [[major minor patch :as parts] (map #(Long/parseLong %)
-                                             (strings/split semver #"\."))]
+                                             (str/split semver #"\."))]
       (when-not (= (count parts) 3)
         (throw (ex-info "invalid semver, expected major.minor.patch" {:version semver})))
       {:major   major
@@ -66,7 +66,7 @@
 (defn- interpolate [m s]
   (reduce
     (fn [s [k v]]
-      (strings/replace s (format "${%s}" (str k)) (str v)))
+      (str/replace s (format "${%s}" (str k)) (str v)))
     s
     m))
 
@@ -190,7 +190,7 @@ and include this full error message to add support for your platform."
       (get platform-alternatives platform platform))))
 
 (defn- get-protoc-release [{:keys [semver os-name os-arch]}]
-  (strings/join "-" ["protoc" semver os-name os-arch]))
+  (str/join "-" ["protoc" semver os-name os-arch]))
 
 (defn set-protoc-permissions! [protoc-path]
   (let [permissions (HashSet.)]
@@ -211,7 +211,7 @@ and include this full error message to add support for your platform."
   (try
     (println "protodeps: Trying to download" plugin-name "from" url "...")
     (with-open [raw-input (io/input-stream url)]
-      (if (strings/ends-with? url ".tar.gz")
+      (if (str/ends-with? url ".tar.gz")
         (let [plugin-dir (.getParent (io/file plugin-file))
               process    (-> (ProcessBuilder. ["tar" "-xzf" "-" "-C" plugin-dir plugin-name])
                              (.redirectErrorStream true)
@@ -228,7 +228,7 @@ and include this full error message to add support for your platform."
                                    :error err})))))
             (finally
               (.destroy process))))
-        (with-open [input  (if (strings/ends-with? url ".gz")
+        (with-open [input  (if (str/ends-with? url ".gz")
                              (GZIPInputStream. raw-input)
                              raw-input)
                     output (io/output-stream (io/file plugin-file))]
@@ -256,9 +256,9 @@ and include this full error message to add support for your platform."
 
 (defn run-protoc-and-report! [protoc-path opts]
   (let [{:keys [out err]} (run-sh! protoc-path opts)]
-    (when-not (strings/blank? err)
+    (when-not (str/blank? err)
       (print-err err))
-    (when-not (strings/blank? out)
+    (when-not (str/blank? out)
       (println out))))
 
 
@@ -296,7 +296,7 @@ and include this full error message to add support for your platform."
   (filterv
     (fn [^File file]
       (and (not (.isDirectory file))
-           (strings/ends-with? (.getName file) ".proto")))
+           (str/ends-with? (.getName file) ".proto")))
     (file-seq (io/file (append-dir git-repo-path dep-path)))))
 
 (defn long-opt [k v]
@@ -332,7 +332,7 @@ and include this full error message to add support for your platform."
   (parallelize
     parallelism
     proto-files
-    sets/union
+    set/union
     (fn [proto-files]
       (loop [seen-files (set proto-files)
              [f & r] proto-files]
@@ -356,7 +356,7 @@ and include this full error message to add support for your platform."
                   deps)))))))))
 
 (defn strip-suffix [suffix s]
-  (if (strings/ends-with? s suffix)
+  (if (str/ends-with? s suffix)
     (subs s 0 (- (count s) (count suffix)))
     s))
 
@@ -366,7 +366,7 @@ and include this full error message to add support for your platform."
   (when-not output-path
     (throw (ex-info "output path not defined" {})))
   (when-not (some (fn [sp]
-                    (strings/ends-with? (strip-trailing-slash sp)
+                    (str/ends-with? (strip-trailing-slash sp)
                                         (strip-trailing-slash output-path)))
                   (:java-source-paths project))
     (print-warning "output-path" output-path "not found in :java-source-paths")))
@@ -375,25 +375,16 @@ and include this full error message to add support for your platform."
   (doseq [file (reverse (file-seq (.toFile path)))]
     (.delete ^File file)))
 
-(defn- format-plugin-options
-  "Convert plugin options to the parameter string passed to the plugin.
-   A map becomes comma-separated key=value pairs, and a string is passed as is."
-  [options]
-  (cond
-    (string? options) options
-    (seq options) (strings/join "," (map (fn [[k v]] (str (name k) "=" v)) options))))
-
 (defn- add-plugin-opts
   "Add protoc options for a single plugin.
    protoc pairs `--X_out` with the plugin named `protoc-gen-X`, so the plugin is passed under that name.
    Options are passed as `--X_opt`, which protoc adds to the plugin's parameters."
   [protoc-opts output-path {:keys [plugin-path output-directive options]}]
-  (let [plugin-id      (strip-suffix "_out" output-directive)
-        formatted-opts (format-plugin-options options)]
+  (let [plugin-id (strip-suffix "_out" output-directive)]
     (cond-> (-> protoc-opts
                 (conj (long-opt "plugin" (str "protoc-gen-" plugin-id "=" plugin-path)))
                 (conj (long-opt output-directive output-path)))
-      formatted-opts (conj (long-opt (str plugin-id "_opt") formatted-opts)))))
+      options (conj (long-opt (str plugin-id "_opt") options)))))
 
 (defn protoc-opts
   "Build protoc command options with support for multiple plugins.
@@ -550,7 +541,7 @@ and include this full error message to add support for your platform."
                                     parallelism
                                     protoc proto-paths
                                     (discover-files repo-path (str proto-dir))))))
-                            sets/union
+                            set/union
                             (:dependencies repo))]
           (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
           (when (empty? proto-files)

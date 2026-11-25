@@ -1,16 +1,14 @@
 (ns leiningen.protodeps.spec
   "Specs for the :lein-protodeps configuration."
   (:require [clojure.spec.alpha :as s]
-            [clojure.string :as strings]))
+            [clojure.string :as str]))
 
-(s/def ::non-blank-string (s/and string? (complement strings/blank?)))
-(s/def ::option-key (some-fn keyword? string? symbol?))
+(s/def ::non-blank-string (s/and string? (complement str/blank?)))
 (s/def :leiningen.protodeps.plugin/name ::non-blank-string)
 (s/def :leiningen.protodeps.plugin/version ::non-blank-string)
 (s/def :leiningen.protodeps.plugin/url-template ::non-blank-string)
 (s/def :leiningen.protodeps.plugin/output-directive (s/and string? #(re-matches #".+_out" %)))
-(s/def :leiningen.protodeps.plugin/options (s/nilable (s/or :map (s/map-of ::option-key any?)
-                                                            :string ::non-blank-string)))
+(s/def :leiningen.protodeps.plugin/options (s/nilable ::non-blank-string))
 (s/def ::plugin (s/keys :req-un [:leiningen.protodeps.plugin/name
                                  :leiningen.protodeps.plugin/version
                                  :leiningen.protodeps.plugin/url-template
