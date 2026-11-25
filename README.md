@@ -124,10 +124,9 @@ Add a `:plugins` vector to your configuration:
   - `${:os-name}`: host OS name (tries `osx`/`darwin` for macOS, `linux` for Linux)
   - `${:os-arch}`: host architecture (tries `x86_64`/`amd64` for x64, `aarch_64`/`arm64` for ARM64)
 - `:output-directive` (required): the protoc output flag name without `--`, ending in `_out` (e.g., `"validate_out"` becomes `--validate_out`). protoc pairs `--X_out` with a plugin named `protoc-gen-X`, so the downloaded binary is passed to protoc as `--plugin=protoc-gen-X=<path>`.
-- `:options` (optional): map of plugin-specific options formatted as `key=value` pairs in the output directive.
-- `:additional-flags` (optional): map of additional protoc flags (e.g., `{:doc_opt "markdown,docs.md"}` becomes `--doc_opt=markdown,docs.md`).
+- `:options` (optional): plugin parameters, passed as `--X_opt=...` for an `X_out` directive. A map becomes comma-separated `key=value` pairs (e.g., `{:lang "java"}` becomes `--validate_opt=lang=java`), and a string is passed as is (e.g., `"markdown,docs.md"` becomes `--doc_opt=markdown,docs.md`). Requires protoc 3.2.0 or newer.
 
-The `:plugins` vector is validated before anything is downloaded. A missing required key, an `:output-directive` that does not end in `_out`, non-map `:options`, or two plugins with the same `:output-directive` fail with a message that names the problem.
+The `:plugins` vector is validated before anything is downloaded. A missing required key, an `:output-directive` that does not end in `_out`, `:options` that is not a map or a string, or two plugins with the same `:output-directive` fail with a message that names the problem.
 
 The library tries multiple naming conventions automatically. On macOS ARM64, it generates and tries URLs with `osx`/`aarch_64`, then `darwin`/`arm64` until one succeeds.
 
@@ -165,7 +164,8 @@ Generated protoc command:
 protoc --proto_path=... \
        --java_out=output/ \
        --plugin=protoc-gen-validate=~/.lein-protodeps/plugins-installations/protoc-gen-validate/1.3.0/protoc-gen-validate \
-       --validate_out=lang=java:output/ \
+       --validate_out=output/ \
+       --validate_opt=lang=java \
        file.proto
 ```
 
@@ -187,11 +187,11 @@ You can configure multiple plugins together. For example, using gRPC, validation
                            :version "1.5.1"
                            :url-template "https://github.com/pseudomuto/protoc-gen-doc/releases/download/v${:version}/protoc-gen-doc_${:version}_${:os-name}_${:os-arch}.tar.gz"
                            :output-directive "doc_out"
-                           :additional-flags {:doc_opt "markdown,docs.md"}}]
+                           :options "markdown,docs.md"}]
                  :repos {...}}
 ```
 
-The [protoc-gen-doc](https://github.com/pseudomuto/protoc-gen-doc) plugin uses `:additional-flags` for format configuration since it requires the separate `--doc_opt` flag.
+The [protoc-gen-doc](https://github.com/pseudomuto/protoc-gen-doc) plugin takes positional parameters (`FORMAT,FILE`), so its `:options` is a string.
 
 ### Backward Compatibility
 

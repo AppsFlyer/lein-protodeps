@@ -9,14 +9,13 @@
 (s/def :leiningen.protodeps.plugin/version ::non-blank-string)
 (s/def :leiningen.protodeps.plugin/url-template ::non-blank-string)
 (s/def :leiningen.protodeps.plugin/output-directive (s/and string? #(re-matches #".+_out" %)))
-(s/def :leiningen.protodeps.plugin/options (s/nilable (s/map-of ::option-key any?)))
-(s/def :leiningen.protodeps.plugin/additional-flags (s/nilable (s/map-of ::option-key any?)))
+(s/def :leiningen.protodeps.plugin/options (s/nilable (s/or :map (s/map-of ::option-key any?)
+                                                            :string ::non-blank-string)))
 (s/def ::plugin (s/keys :req-un [:leiningen.protodeps.plugin/name
                                  :leiningen.protodeps.plugin/version
                                  :leiningen.protodeps.plugin/url-template
                                  :leiningen.protodeps.plugin/output-directive]
-                        :opt-un [:leiningen.protodeps.plugin/options
-                                 :leiningen.protodeps.plugin/additional-flags]))
+                        :opt-un [:leiningen.protodeps.plugin/options]))
 
 (defn- distinct-output-directives? [plugins]
   (= (count plugins)

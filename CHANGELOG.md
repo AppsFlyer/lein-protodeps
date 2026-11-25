@@ -12,9 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 * Generic protoc plugin support via the `:plugins` configuration option
 * Plugins are downloaded from configurable URL templates
-* Plugin-specific options (e.g., `lang=java` for protoc-gen-validate)
+* Plugin `:options`, as a `key=value` map or a string, passed to the plugin as `--X_opt` (requires protoc 3.2.0 or newer)
 * Multiple plugins can run in the same build
-* Plugin `:additional-flags` configuration option for plugins requiring extra protoc flags (e.g., `protoc-gen-doc`'s `--doc_opt`)
 * `:plugins` is validated with `clojure.spec` before anything is downloaded, and the error names the missing or malformed key
 * `${:version}` can be used in `:protoc-zip-url-template`
 * Tests for plugin download, URL variant fallback, validation and protoc option building

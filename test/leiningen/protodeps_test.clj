@@ -123,9 +123,10 @@
           "Generated URL should NOT match the incorrect format with aarch64"))))
 
 (deftest plugin-options-formatting-test
-  (testing "Format plugin options as key=value pairs"
+  (testing "Format map options as key=value pairs and pass string options as is"
     (are [expected input] (= expected (@#'sut/format-plugin-options input))
                           "lang=java" {:lang "java"}
+                          "markdown,docs.md" "markdown,docs.md"
                           "lang=java,paths=source_relative" {:lang  "java"
                                                              :paths "source_relative"}
                           nil {}
@@ -199,8 +200,10 @@
                     "--plugin=protoc-gen-grpc-java=/plugins/protoc-gen-grpc-java"
                     "--grpc-java_out=/output"
                     "--plugin=protoc-gen-validate=/plugins/protoc-gen-validate"
-                    "--validate_out=lang=java:/output"
-                    "/protos/test.proto")))
+                    "--validate_out=/output"
+                    "--validate_opt=lang=java"
+                    "/protos/test.proto")
+        (is (not-any? #(.startsWith ^String % "--grpc-java_opt") result))))
 
     (testing "Build protoc command without plugins"
       (let [plugins []
@@ -211,11 +214,10 @@
                     "/protos/test.proto")
         (is (not-any? #(.startsWith ^String % "--plugin=") result))))
 
-    (testing "Build protoc command with additional flags"
+    (testing "Build protoc command with string options"
       (let [plugins [{:plugin-path      "/plugins/protoc-gen-doc"
                       :output-directive "doc_out"
-                      :options          nil
-                      :additional-flags {:doc_opt "markdown,docs.md"}}]
+                      :options          "markdown,docs.md"}]
             result  (@#'sut/protoc-opts proto-paths output-path plugins proto-file)]
         (are [flag] (contains-flag? result flag)
                     "--plugin=protoc-gen-doc=/plugins/protoc-gen-doc"

@@ -376,26 +376,24 @@ and include this full error message to add support for your platform."
     (.delete ^File file)))
 
 (defn- format-plugin-options
-  "Convert a map of plugin options to a comma-separated key=value string"
+  "Convert plugin options to the parameter string passed to the plugin.
+   A map becomes comma-separated key=value pairs, and a string is passed as is."
   [options]
-  (when (seq options)
-    (strings/join "," (map (fn [[k v]] (str (name k) "=" v)) options))))
+  (cond
+    (string? options) options
+    (seq options) (strings/join "," (map (fn [[k v]] (str (name k) "=" v)) options))))
 
 (defn- add-plugin-opts
   "Add protoc options for a single plugin.
-   protoc pairs `--X_out` with the plugin named `protoc-gen-X`, so the plugin is passed under that name."
-  [protoc-opts output-path {:keys [plugin-path output-directive options additional-flags]}]
-  (let [formatted-opts (format-plugin-options options)
-        output-value   (if formatted-opts
-                         (str formatted-opts ":" output-path)
-                         output-path)
-        protoc-name    (str "protoc-gen-" (strip-suffix "_out" output-directive))
-        additional     (when additional-flags
-                         (mapv (fn [[k v]] (long-opt (name k) v)) additional-flags))]
-    (-> protoc-opts
-        (conj (long-opt "plugin" (str protoc-name "=" plugin-path)))
-        (conj (long-opt output-directive output-value))
-        (into (or additional [])))))
+   protoc pairs `--X_out` with the plugin named `protoc-gen-X`, so the plugin is passed under that name.
+   Options are passed as `--X_opt`, which protoc adds to the plugin's parameters."
+  [protoc-opts output-path {:keys [plugin-path output-directive options]}]
+  (let [plugin-id      (strip-suffix "_out" output-directive)
+        formatted-opts (format-plugin-options options)]
+    (cond-> (-> protoc-opts
+                (conj (long-opt "plugin" (str "protoc-gen-" plugin-id "=" plugin-path)))
+                (conj (long-opt output-directive output-path)))
+      formatted-opts (conj (long-opt (str plugin-id "_opt") formatted-opts)))))
 
 (defn protoc-opts
   "Build protoc command options with support for multiple plugins.
@@ -519,8 +517,7 @@ and include this full error message to add support for your platform."
                                    (let [plugin-path (get-plugin! home-dir platform plugin-config)]
                                      {:plugin-path      plugin-path
                                       :output-directive (:output-directive plugin-config)
-                                      :options          (:options plugin-config)
-                                      :additional-flags (:additional-flags plugin-config)}))
+                                      :options          (:options plugin-config)}))
                                  plugin-configs)
         repo-id->repo-path (into {}
                                  (map
