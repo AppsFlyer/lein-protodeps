@@ -14,22 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Plugins are downloaded from configurable URL templates
 * Plugin `:options` string, passed to the plugin as `--X_opt` (requires protoc 3.2.0 or newer)
 * Multiple plugins can run in the same build
-* `:plugins` is validated with `clojure.spec` before anything is downloaded, and the error names the missing or malformed key
+* `.tar.gz`, `.tgz`, `.zip`, `.gz` and plain executable plugin downloads. The format comes from the URL path, ignoring the query string, fragment and case. The extracted plugin must be a regular file. Tarballs can store it as `name` or `./name`, and are extracted with the system `tar`.
+* `:plugins` is validated with `clojure.spec` before anything is downloaded, and the error names the missing or malformed key. `:name` and `:version` cannot be `.`, start with `-`, or contain `/`, `\` or `..`. Two plugins cannot share an `:output-directive`. The gRPC entry from `:compile-grpc?` is validated too.
+* `${:major}`, `${:minor}` and `${:patch}` in plugin URL templates for `x.y.z` versions
 * `${:version}` can be used in `:protoc-zip-url-template`
-* Tests for plugin download, URL variant fallback, validation and protoc option building
 
 ### Changed
-* Legacy gRPC configuration (`:compile-grpc?`, `:grpc-version`, `:grpc-exe-url-template`) is converted to a plugin entry internally. A `grpc-java_out` entry in `:plugins` takes precedence over `:compile-grpc?`.
+* Legacy gRPC configuration (`:compile-grpc?`, `:grpc-version`, `:grpc-exe-url-template`) is converted to a plugin entry internally. A `grpc-java_out` entry in `:plugins` takes precedence over `:compile-grpc?`. Otherwise `:compile-grpc?` without `:grpc-version` fails with a clear error.
 * All plugins, including gRPC, install to `~/.lein-protodeps/plugins-installations/<plugin-name>/<version>/`. `~/.lein-protodeps/grpc-installations/` is no longer read, so gRPC is downloaded again once after upgrading.
-* Plugin downloads try multiple platform naming conventions (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds
+* Plugin downloads try multiple platform naming conventions (`osx`/`darwin`, `aarch_64`/`arm64`) until one succeeds. Each distinct URL is tried once.
 * Plugins are passed to protoc as `--plugin=protoc-gen-X=<path>`, where `X_out` is the plugin's `:output-directive`
 * `protoc-opts` takes a vector of plugins instead of the `compile-grpc?` flag and gRPC plugin path. Code that calls it directly needs to be updated.
 * `os-name->os` and `os-arch->arch` map to vectors of naming variants instead of a single string
-* Requires Leiningen 2.9.0 or newer
+* `set-protoc-permissions!` is renamed to `set-executable-permissions!`, since it also applies to plugins
+* Requires Leiningen 2.9.0 or newer, enforced with `:min-lein-version`
 
 ### Fixed
-* Plugin binaries always have execute permissions set, even when previously downloaded
-* Plugin downloads handle `.tar.gz`, `.gz`, and plain executable formats
+* A plugin binary gets execute permission whenever it is missing, even when previously downloaded
 * A failed or partial plugin download is no longer cached as the plugin binary. The next run downloads it again.
 
 ## [1.0.7] - 2025-08-07

@@ -2,12 +2,12 @@
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.test :refer [are deftest is testing]]
-            [leiningen.protodeps :as sut])
+            [leiningen.protodeps :as sut]
+            [leiningen.protodeps.test-util :as util])
   (:import (clojure.lang ExceptionInfo)
-           (java.io ByteArrayOutputStream File)
+           (java.io File)
            (java.nio.file Files Path)
-           (java.util Arrays Properties)
-           (java.util.zip GZIPOutputStream)))
+           (java.util Arrays Properties)))
 
 (defn- run-test! [test]
   (let [^Path tmp-dir (sut/create-temp-dir!)]
@@ -139,7 +139,7 @@
       (testing "When compile-grpc? is true, add gRPC as a plugin"
         (let [config {:compile-grpc? true
                       :grpc-version  "1.30.2"}
-              result (@#'sut/merge-legacy-grpc-config config grpc-version)]
+              result (@#'sut/merge-legacy-grpc-config [] config grpc-version)]
           (is (= 1 (count result)))
           (is (= "protoc-gen-grpc-java" (:name (first result))))
           (is (= "1.30.2" (:version (first result))))
@@ -149,7 +149,7 @@
         (let [config {:compile-grpc? false
                       :plugins       [{:name    "protoc-gen-validate"
                                        :version "1.0.2"}]}
-              result (@#'sut/merge-legacy-grpc-config config grpc-version)]
+              result (@#'sut/merge-legacy-grpc-config (:plugins config) config grpc-version)]
           (is (= 1 (count result)))
           (is (= "protoc-gen-validate" (:name (first result))))))
 
@@ -160,15 +160,19 @@
                                        :version          "1.0.2"
                                        :url-template     "https://example.com/validate"
                                        :output-directive "validate_out"}]}
-              result (@#'sut/merge-legacy-grpc-config config grpc-version)]
+              result (@#'sut/merge-legacy-grpc-config (:plugins config) config grpc-version)]
           (is (= 2 (count result)))
           (is (= "protoc-gen-grpc-java" (:name (first result))))
           (is (= "protoc-gen-validate" (:name (second result))))))
 
       (testing "No plugins when compile-grpc? is false and no plugins configured"
         (let [config {:compile-grpc? false}
-              result (@#'sut/merge-legacy-grpc-config config grpc-version)]
-          (is (empty? result)))))))
+              result (@#'sut/merge-legacy-grpc-config [] config grpc-version)]
+          (is (empty? result))))
+
+      (testing "compile-grpc? without a gRPC version fails"
+        (is (thrown-with-msg? ExceptionInfo #":grpc-version is not set"
+                              (@#'sut/merge-legacy-grpc-config [] {:compile-grpc? true} nil)))))))
 
 (deftest protoc-opts-with-plugins-test
   (let [proto-paths    ["/path/to/protos"]
@@ -226,7 +230,7 @@
           config       {:compile-grpc? true
                         :grpc-version  "1.68.1"
                         :plugins       [explicit]}]
-      (is (= [explicit] (@#'sut/merge-legacy-grpc-config config grpc-version))))))
+      (is (= [explicit] (@#'sut/merge-legacy-grpc-config (:plugins config) config grpc-version))))))
 
 (deftest generate-plugin-urls-test
   (let [platform {:os-name          "osx"
@@ -243,7 +247,10 @@
     (testing "Other version formats only fill ${:version}"
       (is (= ["https://example.com/v2024.1-rc1/osx"
               "https://example.com/v2024.1-rc1/darwin"]
-             (@#'sut/generate-plugin-urls "https://example.com/v${:version}/${:os-name}" platform "2024.1-rc1"))))))
+             (@#'sut/generate-plugin-urls "https://example.com/v${:version}/${:os-name}" platform "2024.1-rc1"))))
+    (testing "A template without platform variables yields a single URL"
+      (is (= ["https://example.com/1.68.1/grpc.exe"]
+             (@#'sut/generate-plugin-urls "https://example.com/${:version}/grpc.exe" platform "1.68.1"))))))
 
 (deftest protoc-url-template-version-test
   (testing "Protoc URL templates can use ${:version}"
@@ -253,12 +260,6 @@
       (is (= "https://mirror.example.com/3.25.5/protoc-3.25.5-linux-x86_64.zip"
              (@#'sut/interpolate proto-version
                "https://mirror.example.com/${:version}/protoc-${:version}-${:os-name}-${:os-arch}.zip"))))))
-
-(defn- gzip-bytes ^bytes [^bytes content]
-  (let [out (ByteArrayOutputStream.)]
-    (with-open [gz (GZIPOutputStream. out)]
-      (.write gz content))
-    (.toByteArray out)))
 
 (deftest get-plugin-test
   (run-test!
@@ -281,8 +282,9 @@
             plugin-file #(io/file home "plugins-installations" % "1.0.0" %)
             get-plugin! #(@#'sut/get-plugin! home platform %)]
         (io/copy content (io/file releases "linux.bin"))
-        (io/copy (gzip-bytes content) (io/file releases "linux.gz"))
-        (let [gz-bytes (gzip-bytes big-content)]
+        (io/copy (util/gzip-bytes content) (io/file releases "linux.gz"))
+        (io/copy (util/zip-bytes "protoc-gen-zip" content) (io/file releases "linux.zip"))
+        (let [gz-bytes (util/gzip-bytes big-content)]
           (io/copy (Arrays/copyOf gz-bytes (quot (alength gz-bytes) 2))
                    (io/file releases "linux-truncated.gz")))
         (let [tar-src (doto (.toFile (.resolve tmp-dir "tar-src")) (.mkdirs))]
@@ -299,7 +301,8 @@
                    (= [plugin-name] (vec (.list (.getParentFile (io/file path)))))))
             "protoc-gen-plain" "${:os-name}.bin"
             "protoc-gen-gz" "${:os-name}.gz"
-            "protoc-gen-tar" "${:os-name}.tar.gz"))
+            "protoc-gen-tar" "${:os-name}.tar.gz"
+            "protoc-gen-zip" "${:os-name}.zip"))
 
         (testing "A truncated download is not cached"
           (let [plugin-name "protoc-gen-truncated"
@@ -315,55 +318,45 @@
               (is (= (str (plugin-file plugin-name))
                      (get-plugin! (config plugin-name (url-for "${:os-name}.gz"))))))))))))
 
-(deftest protoc-gen-validate-plugin-test
-  (testing "Protoc-gen-validate plugin generates validator files"
-    (run-test!
-      (fn [tmp-dir-no-plugin]
-        ; Without the plugin, no validator files are generated
-        (let [config-no-plugin {:output-path   (str tmp-dir-no-plugin)
-                                :proto-version "3.25.5"
-                                :repos         '{:user-protos {:repo-type    :filesystem
-                                                               :config       {:path "./resources/test/proto_repo3"}
-                                                               :proto-paths  ["protos"]
-                                                               :dependencies [protos/validation]}
-                                                 :validate    {:repo-type   :git
-                                                               :config      {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
-                                                                             :rev       "v1.3.0"}
-                                                               :proto-paths ["."]}}}]
-          (sut/generate-files! {} config-no-plugin)
-          (let [files (->> (.toFile tmp-dir-no-plugin)
-                           file-seq
-                           (filter #(not (.isDirectory ^File %)))
-                           (map #(.getName ^File %))
-                           set)]
-            (is (some #(= "User.java" %) files) "User.java should be generated")
-            (is (not (some #(.contains ^String % "Validator") files))
-                "No Validator files should be generated without the plugin")))))
+(def ^:private validate-test-repos
+  '{:user-protos {:repo-type    :filesystem
+                  :config       {:path "./resources/test/proto_repo3"}
+                  :proto-paths  ["protos"]
+                  :dependencies [protos/validation]}
+    :validate    {:repo-type   :git
+                  :config      {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
+                                :rev       "v1.3.0"}
+                  :proto-paths ["."]}})
 
+(defn- generated-file-names [^Path dir]
+  (->> (.toFile dir)
+       file-seq
+       (remove #(.isDirectory ^File %))
+       (map #(.getName ^File %))
+       set))
+
+(deftest protoc-gen-validate-plugin-test
+  (testing "Without the plugin, no validator files are generated"
     (run-test!
-      (fn [tmp-dir-with-plugin]
-        ; With the plugin, validator files are generated
-        (let [config-with-plugin {:output-path   (str tmp-dir-with-plugin)
-                                  :proto-version "3.25.5"
-                                  :plugins       [{:name             "protoc-gen-validate"
-                                                   :version          "1.3.0"
-                                                   :url-template     "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
-                                                   :output-directive "validate_out"
-                                                   :options          "lang=java"}]
-                                  :repos         '{:user-protos {:repo-type    :filesystem
-                                                                 :config       {:path "./resources/test/proto_repo3"}
-                                                                 :proto-paths  ["protos"]
-                                                                 :dependencies [protos/validation]}
-                                                   :validate    {:repo-type   :git
-                                                                 :config      {:clone-url "https://github.com/bufbuild/protoc-gen-validate.git"
-                                                                               :rev       "v1.3.0"}
-                                                                 :proto-paths ["."]}}}]
-          (sut/generate-files! {} config-with-plugin)
-          (let [files (->> (.toFile tmp-dir-with-plugin)
-                           file-seq
-                           (filter #(not (.isDirectory ^File %)))
-                           (map #(.getName ^File %))
-                           set)]
-            (is (some #(= "User.java" %) files) "User.java should be generated")
-            (is (some #(= "UserValidator.java" %) files)
-                "UserValidator.java should be generated with the plugin")))))))
+      (fn [tmp-dir]
+        (sut/generate-files! {} {:output-path   (str tmp-dir)
+                                 :proto-version "3.25.5"
+                                 :repos         validate-test-repos})
+        (let [files (generated-file-names tmp-dir)]
+          (is (contains? files "User.java"))
+          (is (not-any? #(.contains ^String % "Validator") files))))))
+
+  (testing "With the plugin, validator files are generated"
+    (run-test!
+      (fn [tmp-dir]
+        (sut/generate-files! {} {:output-path   (str tmp-dir)
+                                 :proto-version "3.25.5"
+                                 :plugins       [{:name             "protoc-gen-validate"
+                                                  :version          "1.3.0"
+                                                  :url-template     "https://github.com/bufbuild/protoc-gen-validate/releases/download/v${:version}/protoc-gen-validate_${:version}_${:os-name}_${:os-arch}.tar.gz"
+                                                  :output-directive "validate_out"
+                                                  :options          "lang=java"}]
+                                 :repos         validate-test-repos})
+        (let [files (generated-file-names tmp-dir)]
+          (is (contains? files "User.java"))
+          (is (contains? files "UserValidator.java")))))))

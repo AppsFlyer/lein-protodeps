@@ -4,11 +4,23 @@
             [clojure.string :as str]))
 
 (s/def ::non-blank-string (s/and string? (complement str/blank?)))
-(s/def :leiningen.protodeps.plugin/name ::non-blank-string)
-(s/def :leiningen.protodeps.plugin/version ::non-blank-string)
+
+(defn- path-segment?
+  "True when s names a single directory entry, so it cannot escape the install directory
+   or be read as an option by tar."
+  [s]
+  (not (or (= "." s)
+           (str/starts-with? s "-")
+           (str/includes? s "/")
+           (str/includes? s "\\")
+           (str/includes? s ".."))))
+
+(s/def ::path-segment (s/and ::non-blank-string path-segment?))
+(s/def :leiningen.protodeps.plugin/name ::path-segment)
+(s/def :leiningen.protodeps.plugin/version ::path-segment)
 (s/def :leiningen.protodeps.plugin/url-template ::non-blank-string)
 (s/def :leiningen.protodeps.plugin/output-directive (s/and string? #(re-matches #".+_out" %)))
-(s/def :leiningen.protodeps.plugin/options (s/nilable ::non-blank-string))
+(s/def :leiningen.protodeps.plugin/options ::non-blank-string)
 (s/def ::plugin (s/keys :req-un [:leiningen.protodeps.plugin/name
                                  :leiningen.protodeps.plugin/version
                                  :leiningen.protodeps.plugin/url-template

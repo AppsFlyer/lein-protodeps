@@ -31,7 +31,7 @@ are not already installed.
 
 ## Usage
 
-Put `[com.appsflyer/lein-protodeps "1.1.0"]` into the `:plugins` vector of your project.clj.
+Put `[com.appsflyer/lein-protodeps "1.1.0"]` into the `:plugins` vector of your project.clj. Requires Leiningen 2.9.0 or newer.
 
 Once installed, run `lein protodeps generate` to run the plugin.
 
@@ -103,7 +103,7 @@ Add a `:plugins` vector to your configuration:
 
 ```clj
 :lein-protodeps {:output-path   "src/java/generated"
-                 :proto-version "3.12.4"
+                 :proto-version "3.25.5"
                  :grpc-version  "1.68.1"
                  :compile-grpc? true  ; gRPC via legacy config
                  :plugins [{:name "protoc-gen-validate"
@@ -116,8 +116,8 @@ Add a `:plugins` vector to your configuration:
 
 ### Plugin Configuration Keys
 
-- `:name` (required): the plugin binary's file name (e.g., `"protoc-gen-validate"`). It names the install directory, and for `.tar.gz` downloads it must match the binary's path at the root of the archive.
-- `:version` (required): the plugin version to download.
+- `:name` (required): the plugin binary's file name (e.g., `"protoc-gen-validate"`). It names the install directory, and for `.tar.gz`, `.tgz` and `.zip` downloads it must match the binary's path at the root of the archive (`name`, or `./name` in a tarball). It cannot be `.`, start with `-`, or contain `/`, `\` or `..`.
+- `:version` (required): the plugin version to download. It cannot be `.`, start with `-`, or contain `/`, `\` or `..`.
 - `:url-template` (required): URL template for downloading the plugin binary. Interpolation variables:
   - `${:version}`: plugin version (`${:semver}` also works for backward compatibility)
   - `${:major}`, `${:minor}`, `${:patch}`: version components, when the version has the form `x.y.z`
@@ -126,20 +126,23 @@ Add a `:plugins` vector to your configuration:
 - `:output-directive` (required): the protoc output flag name without `--`, ending in `_out` (e.g., `"validate_out"` becomes `--validate_out`). protoc pairs `--X_out` with a plugin named `protoc-gen-X`, so the downloaded binary is passed to protoc as `--plugin=protoc-gen-X=<path>`.
 - `:options` (optional): plugin parameters as a string, passed as is to `--X_opt=...` for an `X_out` directive (e.g., `"lang=java"` becomes `--validate_opt=lang=java`, and `"markdown,docs.md"` becomes `--doc_opt=markdown,docs.md`). Requires protoc 3.2.0 or newer.
 
-The `:plugins` vector is validated before anything is downloaded. A missing required key, an `:output-directive` that does not end in `_out`, `:options` that is not a string, or two plugins with the same `:output-directive` fail with a message that names the problem.
+The `:plugins` vector is validated before anything is downloaded. A missing required key, a `:name` or `:version` that breaks the rule above, an `:output-directive` that does not end in `_out`, `:options` that is present but blank or not a string, or two plugins with the same `:output-directive` fail with a message that names the problem.
 
-The library tries multiple naming conventions automatically. On macOS ARM64, it generates and tries URLs with `osx`/`aarch_64`, then `darwin`/`arm64` until one succeeds.
+The library tries multiple naming conventions automatically. On macOS ARM64, it tries every combination of `osx`/`darwin` and `aarch_64`/`arm64` until one succeeds. Each distinct URL is tried once.
 
 ### Plugin Installation
 
 Plugins are automatically downloaded and installed to `~/.lein-protodeps/plugins-installations/<plugin-name>/<version>/` when first used.
 
-**Supported formats:**
-- `.tar.gz` archives (extracts the plugin binary from the tarball)
+**Supported formats**, chosen by the URL path without its query string or fragment, ignoring case:
+- `.tar.gz` and `.tgz` archives (extracts the plugin binary from the tarball, using the `tar` command, which must be on the `PATH`)
+- `.zip` archives (extracts the plugin binary from the zip)
 - `.gz` compressed files (decompresses to binary)
 - Plain executables (downloads directly)
 
-Execute permissions are set automatically on all downloaded binaries.
+The result must be a regular file. A directory or symlink with the plugin's name in an archive fails the download.
+
+Execute permission is set on a plugin binary whenever it is missing, including on a previously downloaded one.
 
 ### Example: Using protoc-gen-validate
 
@@ -191,6 +194,8 @@ You can configure multiple plugins together. For example, using gRPC, validation
                  :repos {...}}
 ```
 
+**Note:** protoc runs once per proto file. A plugin that writes one combined file, like protoc-gen-doc with `docs.md`, is overwritten on each run and ends up with the last file's output only.
+
 ### Backward Compatibility
 
 The `:compile-grpc?` and `:grpc-version` options are syntactic sugar for adding gRPC to the `:plugins` vector. These two configurations are equivalent:
@@ -223,8 +228,8 @@ URL templates support these interpolation variables:
 
 * `${:version}` or `${:semver}`: version string from `:proto-version` or `:grpc-version`
 * `${:major}`, `${:minor}`, `${:patch}`: version components
-* `${:os-name}`: host OS (`linux`, `osx`)
-* `${:os-arch}`: host architecture (`x86_64`, `aarch_64`)
+* `${:os-name}`: host OS (`linux`, `osx`). gRPC downloads also try `darwin` on macOS.
+* `${:os-arch}`: host architecture (`x86_64`, `aarch_64`). gRPC downloads also try `amd64` and `arm64`.
 
 Example override:
 ```clj
