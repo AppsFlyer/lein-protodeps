@@ -1,8 +1,9 @@
-(defproject com.appsflyer/lein-protodeps "1.0.7"
+(defproject com.appsflyer/lein-protodeps "1.1.0-SNAPSHOT"
   :description "Leiningen plugin for consuming and compiling protobuf schemas"
   :url "https://github.com/AppsFlyer/lein-protodeps"
   :license {:name "Apache License, Version 2.0"
             :url  "http://www.apache.org/licenses/LICENSE-2.0.html"}
+  :min-lein-version "2.9.0"
   :eval-in-leiningen true
   :dependencies [[org.clojure/tools.cli "1.0.214"]]
   :deploy-repositories [["releases" {:url "https://repo.clojars.org"
