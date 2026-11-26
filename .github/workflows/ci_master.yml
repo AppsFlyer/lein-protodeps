@@ -31,9 +31,9 @@ jobs:
             ${{ runner.os }}-maven-
             
       - name: Setup linter
-        uses: DeLaGuardo/setup-clj-kondo@master
+        uses: DeLaGuardo/setup-clojure@13
         with:
-          version: '2025.07.28'
+          clj-kondo: '2026.10.26'
           
       - name: Lint
         run: clj-kondo --lint src test  
@@ -131,3 +131,4 @@ jobs:
           echo "Release version:" $RELEASE_VERSION"; commit: "${{github.sha}}"; successfully deployed to Clojars"
           git tag -a v$RELEASE_VERSION -m "Release version $RELEASE_VERSION"
           git push origin master
+          gh release create v$RELEASE_VERSION --verify-tag --title v$RELEASE_VERSION --generate-notes
