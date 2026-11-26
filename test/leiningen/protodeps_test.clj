@@ -154,3 +154,24 @@
         (is (thrown? ExceptionInfo (sut/generate-files! {} {}))))
       (is (some? @created))
       (is (not (.exists (.toFile ^Path @created)))))))
+
+(deftest protoc-url-template-version-test
+  (testing "Protoc URL templates can use ${:version}"
+    (let [proto-version (merge {:os-name "linux"
+                                :os-arch "x86_64"}
+                               (@#'sut/parse-semver "3.25.5"))]
+      (is (= "https://mirror.example.com/3.25.5/protoc-3.25.5-linux-x86_64.zip"
+             (@#'sut/interpolate proto-version
+               "https://mirror.example.com/${:version}/protoc-${:version}-${:os-name}-${:os-arch}.zip"))))))
+
+(deftest grpc-url-template-version-test
+  (let [grpc-version (merge {:os-name "linux"
+                             :os-arch "x86_64"}
+                            (@#'sut/parse-semver "1.68.1"))]
+    (testing "The default gRPC URL template fills in ${:version}"
+      (is (= "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/1.68.1/protoc-gen-grpc-java-1.68.1-linux-x86_64.exe"
+             (@#'sut/interpolate grpc-version sut/grpc-release-tpl))))
+    (testing "gRPC URL templates can use ${:version}"
+      (is (= "https://mirror.example.com/1.68.1/protoc-gen-grpc-java-1.68.1-linux-x86_64.exe"
+             (@#'sut/interpolate grpc-version
+               "https://mirror.example.com/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}-${:os-arch}.exe"))))))

@@ -41,10 +41,11 @@
                                              (str/split semver #"\."))]
       (when-not (= (count parts) 3)
         (throw (ex-info "invalid semver, expected major.minor.patch" {:version semver})))
-      {:major  major
-       :minor  minor
-       :patch  patch
-       :semver semver})))
+      {:major   major
+       :minor   minor
+       :patch   patch
+       :semver  semver
+       :version semver})))
 
 
 (defn- interpolate [m s]
@@ -205,7 +206,7 @@ and include this full error message to add support for your platform."
 (def new-protoc-release-tpl "https://github.com/protocolbuffers/protobuf/releases/download/v${:minor}.${:patch}/protoc-${:minor}.${:patch}-${:os-name}-${:os-arch}.zip")
 
 
-(def grpc-release-tpl "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/${:semver}/protoc-gen-grpc-java-${:semver}-${:os-name}-${:os-arch}.exe")
+(def grpc-release-tpl "https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}-${:os-arch}.exe")
 
 
 (defn- protoc-release-template [{:keys [protoc-zip-url-template]}
