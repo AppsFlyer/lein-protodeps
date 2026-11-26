@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.14] - 2026-11-26
+
+### Fixed
+* Temp directory cleanup no longer follows symlinks, so a symlink in a cloned repo cannot cause files outside the temp directory to be deleted.
+* Temp directory cleanup is best-effort. It deletes everything it can and reports each path it cannot delete as a warning. Cleanup never fails the build or hides the error that ended it.
+* The temp directory is also deleted when setup fails, for example when a clone or a download throws.
+
+### Changed
+* `print-err` and `print-warning` moved to a new `leiningen.protodeps.log` namespace.
+
 ## [1.0.13] - 2026-11-26
 
 ### Changed
@@ -68,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.13...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.14...HEAD
+[1.0.14]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.10...v1.0.11
