@@ -72,9 +72,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Deploy snapshots for PRs so they can be tested elsewhere
-    # One deploy at a time across all PRs, so concurrent uploads cannot leave Clojars metadata and checksums out of sync
+    # One Clojars deploy at a time across all PRs and releases, so concurrent uploads cannot leave metadata and checksums out of sync
     concurrency:
-      group: deploy-snapshot
+      group: clojars-deploy
       cancel-in-progress: false
     steps:
       - name: Checkout
