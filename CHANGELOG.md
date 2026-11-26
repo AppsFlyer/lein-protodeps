@@ -7,29 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-11-26
+
+### Changed
+* Source and tests use the `str` and `set` aliases and imported class names instead of fully-qualified ones, and are re-indented. A committed `.clj-kondo/config.edn` enforces consistent aliases.
+* Removed the `(comment ...)` example config from `src/leiningen/protodeps.clj`.
+* README configuration tables are realigned.
+
 ## [1.0.11] - 2026-11-26
 
 ### Changed
 * CI lints and runs the unit tests in a single `test` job instead of a separate `build` job before it.
 * CI workflows default to read-only repository access, and only the Release `deploy` job can write.
-* Updated the plugin version in the README usage snippet to `1.0.11`.
 
 ## [1.0.10] - 2026-11-26
 
 ### Changed
 * CI installs clj-kondo `2026.10.26` with `DeLaGuardo/setup-clojure@13` instead of `DeLaGuardo/setup-clj-kondo@master`, which runs on the deprecated Node.js 20.
 * The Release workflow creates a GitHub release with generated notes for the version it tags.
-* Updated the plugin version in the README usage snippet to `1.0.10`.
 
 ## [1.0.9] - 2026-11-26
 
 ### Changed
 * Renamed the `:af-proto` repo key to `:my-protos` and the `products/events` dependency to `"my_products/protos"` with `:proto-paths` `["my_products"]` in the `(comment ...)` example in `src/leiningen/protodeps.clj`.
-* Updated the plugin version in the README usage snippet from `1.0.6` to `1.0.7`.
 * Clojars deploys from PRs and releases run one at a time.
 * CI uses `actions/checkout@v7`, `actions/setup-java@v6` and `actions/cache@v6`.
 * CI installs the latest Leiningen with `DeLaGuardo/setup-clojure@13` instead of downloading the `lein` script.
-* Updated the plugin version in the README usage snippet to `1.0.9`.
 
 ## [1.0.7] - 2025-08-07
 
@@ -58,7 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.11...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.12...HEAD
+[1.0.12]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...v1.0.9

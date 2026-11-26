@@ -1,14 +1,15 @@
 (ns leiningen.protodeps
   (:require [clojure.java.io :as io]
-            [clojure.string :as strings]
             [clojure.java.shell :as sh]
-            [clojure.set :as sets]
-            [leiningen.core.main :as lein]
-            [clojure.tools.cli :as cli])
-  (:import [java.io File]
-           [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]
-           [java.nio.file Path]))
+            [clojure.set :as set]
+            [clojure.string :as str]
+            [clojure.tools.cli :as cli]
+            [leiningen.core.main :as lein])
+  (:import (java.io File)
+           (java.nio.file Files Path)
+           (java.nio.file.attribute FileAttribute PosixFilePermission)
+           (java.util HashSet)
+           (java.util.zip ZipEntry ZipInputStream)))
 
 (def ^:dynamic *verbose?* false)
 
@@ -25,7 +26,7 @@
   (apply print-err "protodeps: WARNING:" s))
 
 (defn append-dir [parent & children]
-  (strings/join File/separator (concat [parent] children)))
+  (str/join File/separator (concat [parent] children)))
 
 
 (defn create-temp-dir!
@@ -40,7 +41,7 @@
 (defn- parse-semver [semver]
   (when semver
     (let [[major minor patch :as parts] (map #(Long/parseLong %)
-                                             (strings/split semver #"\."))]
+                                             (str/split semver #"\."))]
       (when-not (= (count parts) 3)
         (throw (ex-info "invalid semver, expected major.minor.patch" {:version semver})))
       {:major  major
@@ -52,7 +53,7 @@
 (defn- interpolate [m s]
   (reduce
     (fn [s [k v]]
-      (strings/replace s (format "${%s}" (str k)) (str v)))
+      (str/replace s (format "${%s}" (str k)) (str v)))
     s
     m))
 
@@ -100,7 +101,7 @@
         rev        (:rev git-config)]
     (println "cloning" repo-name "at rev" rev "...")
     (when-not rev
-      (throw  (ex-info (str ":rev is not set for " repo-name ", set a git tag/branch name/commit hash") {})))
+      (throw (ex-info (str ":rev is not set for " repo-name ", set a git tag/branch name/commit hash") {})))
     (git-clone! repo-url path rev)
     path))
 
@@ -113,8 +114,8 @@
 (defmethod resolve-repo :filesystem [_ repo-config]
   (some-> repo-config :config :path io/file .getAbsolutePath))
 
-(defn write-zip-entry! [^java.util.zip.ZipInputStream zinp
-                        ^java.util.zip.ZipEntry entry
+(defn write-zip-entry! [^ZipInputStream zinp
+                        ^ZipEntry entry
                         base-path]
   (let [file-name  (append-dir base-path (.getName entry))
         ^File file (io/file file-name)
@@ -130,9 +131,9 @@
                 (.write outp buf 0 bytes-read)
                 (recur)))))))))
 
-(defn unzip! [^java.util.zip.ZipInputStream zinp dst]
+(defn unzip! [^ZipInputStream zinp dst]
   (loop []
-    (when-let [^java.util.zip.ZipEntry entry (.getNextEntry zinp)]
+    (when-let [^ZipEntry entry (.getNextEntry zinp)]
       (write-zip-entry! zinp entry dst)
       (.closeEntry zinp)
       (recur))))
@@ -163,27 +164,27 @@
                "\nPlatform is not currently supported.\n
 Please open an issue at https://github.com/AppsFlyer/lein-protodeps/issues
 and include this full error message to add support for your platform."
-                      {:os.name raw-os-name :os.arch raw-os-arch})))
+               {:os.name raw-os-name :os.arch raw-os-arch})))
     (get platform-alternatives platform platform)))
 
 (defn- get-protoc-release [{:keys [semver os-name os-arch]}]
-  (strings/join "-" ["protoc" semver os-name os-arch]))
+  (str/join "-" ["protoc" semver os-name os-arch]))
 
 (def ^:private grpc-plugin-executable-name "protoc-gen-grpc-java")
 
 
 (defn set-protoc-permissions! [protoc-path]
-  (let [permissions (java.util.HashSet.)]
-    (.add permissions java.nio.file.attribute.PosixFilePermission/OWNER_EXECUTE)
-    (.add permissions java.nio.file.attribute.PosixFilePermission/OWNER_READ)
-    (.add permissions java.nio.file.attribute.PosixFilePermission/OWNER_WRITE)
-    (java.nio.file.Files/setPosixFilePermissions (.toPath (io/file protoc-path))
-                                                 permissions)))
+  (let [permissions (HashSet.)]
+    (.add permissions PosixFilePermission/OWNER_EXECUTE)
+    (.add permissions PosixFilePermission/OWNER_READ)
+    (.add permissions PosixFilePermission/OWNER_WRITE)
+    (Files/setPosixFilePermissions (.toPath (io/file protoc-path))
+                                   permissions)))
 
 
 (defn download-protoc! [url dst]
   (println "protodeps: Downloading protoc from" url "...")
-  (with-open [inp (java.util.zip.ZipInputStream. (io/input-stream url))]
+  (with-open [inp (ZipInputStream. (io/input-stream url))]
     (unzip! inp dst)))
 
 (defn- download-grpc-plugin! [url grpc-plugin-file]
@@ -195,9 +196,9 @@ and include this full error message to add support for your platform."
 
 (defn run-protoc-and-report! [protoc-path opts]
   (let [{:keys [out err]} (run-sh! protoc-path opts)]
-    (when-not (strings/blank? err)
+    (when-not (str/blank? err)
       (print-err err))
-    (when-not (strings/blank? out)
+    (when-not (str/blank? out)
       (println out))))
 
 
@@ -233,10 +234,10 @@ and include this full error message to add support for your platform."
 
 (defn discover-files [git-repo-path dep-path]
   (filterv
-   (fn [^File file]
-     (and (not (.isDirectory file))
-          (strings/ends-with? (.getName file) ".proto")))
-   (file-seq (io/file (append-dir git-repo-path dep-path)))))
+    (fn [^File file]
+      (and (not (.isDirectory file))
+           (str/ends-with? (.getName file) ".proto")))
+    (file-seq (io/file (append-dir git-repo-path dep-path)))))
 
 (defn long-opt [k v]
   (str "--" k "=" v))
@@ -250,52 +251,52 @@ and include this full error message to add support for your platform."
   (map io/file
        (re-seq #"[^\s]*\.proto"
                (:out
-                (run-sh!
-                 protoc-path
-                 (with-proto-paths
-                   [(long-opt "dependency_out" "/dev/stdout")
-                    "-o/dev/null"
-                    (.getAbsolutePath proto-file)]
-                   proto-paths))))))
+                 (run-sh!
+                   protoc-path
+                   (with-proto-paths
+                     [(long-opt "dependency_out" "/dev/stdout")
+                      "-o/dev/null"
+                      (.getAbsolutePath proto-file)]
+                     proto-paths))))))
 
 
 (defn parallelize [{:keys [level min-chunk-size]} c combine-f f]
   (if (or (= 1 level) (< (count c) min-chunk-size))
     (f c)
-    (let [chunks (partition-all (int (/ (count c) level)) c)
+    (let [chunks  (partition-all (int (/ (count c) level)) c)
           ;; parallelism is capped by number of cores
           results (pmap f chunks)]
       (transduce (map identity) combine-f results))))
 
 (defn expand-dependencies [parallelism protoc-path proto-paths proto-files]
   (parallelize
-   parallelism
-   proto-files
-   sets/union
-   (fn [proto-files]
-     (loop [seen-files (set proto-files)
-            [f & r]    proto-files]
-       (if-not f
-         seen-files
-         (let [deps (get-file-dependencies protoc-path proto-paths f)
-               deps (filterv
-                     (fn [^File afile]
-                       (not (some #(Files/isSameFile (.toPath ^File %) (.toPath afile)) seen-files)))
-                     deps)]
-           (recur
-            (conj seen-files f)
-            ;; For very large repos, we might end up concatenating an empty `deps` seq
-            ;; many times over since most of the depenendencies will already be seen in prev iterations.
-            ;; This could lead to the build up of a huge lazy-seq, since `concat` will still
-            ;; cons to the seq. To circumvent this we concat only when non-empty.
-            (if-not (seq deps)
-              r
-              (concat
-               r
-               deps)))))))))
+    parallelism
+    proto-files
+    set/union
+    (fn [proto-files]
+      (loop [seen-files (set proto-files)
+             [f & r] proto-files]
+        (if-not f
+          seen-files
+          (let [deps (get-file-dependencies protoc-path proto-paths f)
+                deps (filterv
+                       (fn [^File afile]
+                         (not (some #(Files/isSameFile (.toPath ^File %) (.toPath afile)) seen-files)))
+                       deps)]
+            (recur
+              (conj seen-files f)
+              ;; For very large repos, we might end up concatenating an empty `deps` seq
+              ;; many times over since most of the depenendencies will already be seen in prev iterations.
+              ;; This could lead to the build up of a huge lazy-seq, since `concat` will still
+              ;; cons to the seq. To circumvent this we concat only when non-empty.
+              (if-not (seq deps)
+                r
+                (concat
+                  r
+                  deps)))))))))
 
 (defn strip-suffix [suffix s]
-  (if (strings/ends-with? s suffix)
+  (if (str/ends-with? s suffix)
     (subs s 0 (- (count s) (count suffix)))
     s))
 
@@ -305,8 +306,8 @@ and include this full error message to add support for your platform."
   (when-not output-path
     (throw (ex-info "output path not defined" {})))
   (when-not (some (fn [sp]
-                    (strings/ends-with? (strip-trailing-slash sp)
-                                        (strip-trailing-slash output-path)))
+                    (str/ends-with? (strip-trailing-slash sp)
+                                    (strip-trailing-slash output-path)))
                   (:java-source-paths project))
     (print-warning "output-path" output-path "not found in :java-source-paths")))
 
@@ -318,9 +319,9 @@ and include this full error message to add support for your platform."
 (defn protoc-opts [proto-paths output-path compile-grpc? grpc-plugin ^File proto-file]
   (let [protoc-opts (with-proto-paths [(long-opt "java_out" output-path)] proto-paths)]
     (cond-> protoc-opts
-      compile-grpc? (conj (long-opt "grpc-java_out" output-path))
-      compile-grpc? (conj (long-opt "plugin" grpc-plugin))
-      true          (conj (.getAbsolutePath proto-file)))))
+            compile-grpc? (conj (long-opt "grpc-java_out" output-path))
+            compile-grpc? (conj (long-opt "plugin" grpc-plugin))
+            true (conj (.getAbsolutePath proto-file)))))
 
 (def cli-spec
   [["-h" "--help"]
@@ -334,7 +335,7 @@ and include this full error message to add support for your platform."
 (defn- get-protoc! [home-dir config proto-version]
   (let [protoc-installs (append-dir home-dir protoc-install-dir)
         protoc-release  (get-protoc-release proto-version)
-        protoc (append-dir protoc-installs protoc-release "bin" "protoc")]
+        protoc          (append-dir protoc-installs protoc-release "bin" "protoc")]
     (when-not (.exists ^File (io/file protoc))
       (let [protoc-zip-url (interpolate proto-version (protoc-release-template config proto-version))]
         (download-protoc! protoc-zip-url (append-dir protoc-installs protoc-release)))
@@ -358,7 +359,7 @@ and include this full error message to add support for your platform."
 
 (defn generate-files! [opts config]
   (let [home-dir           (init-rc-dir!)
-        parallelism        {:level (:parallelism opts)
+        parallelism        {:level          (:parallelism opts)
                             :min-chunk-size 128}
         repos-config       (:repos config)
         output-path        (:output-path config)
@@ -390,37 +391,37 @@ and include this full error message to add support for your platform."
       (doseq [[repo-id repo] repos-config]
         (let [repo-path   (get repo-id->repo-path repo-id)
               proto-files (transduce
-                           (map
-                            ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
-                            ;; as part of the `:dependencies` vector.
-                            (fn [proto-dir-or-vec]
-                              (let [proto-dir (if (vector? proto-dir-or-vec)
-                                                (first proto-dir-or-vec)
-                                                proto-dir-or-vec)]
-                                (println "analyzing" proto-dir "... This may take a while for large repos")
-                                (expand-dependencies
-                                 parallelism
-                                 protoc proto-paths
-                                 (discover-files repo-path (str proto-dir))))))
-                           sets/union
-                           (:dependencies repo))]
+                            (map
+                              ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
+                              ;; as part of the `:dependencies` vector.
+                              (fn [proto-dir-or-vec]
+                                (let [proto-dir (if (vector? proto-dir-or-vec)
+                                                  (first proto-dir-or-vec)
+                                                  proto-dir-or-vec)]
+                                  (println "analyzing" proto-dir "... This may take a while for large repos")
+                                  (expand-dependencies
+                                    parallelism
+                                    protoc proto-paths
+                                    (discover-files repo-path (str proto-dir))))))
+                            set/union
+                            (:dependencies repo))]
           (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
           (when (empty? proto-files)
             (print-warning "could not find any .proto files under" repo-id))
           (parallelize
-           parallelism
-           proto-files
-           (constantly nil)
-           (fn [proto-files]
-             (doseq [proto-file proto-files]
-               (let [protoc-opts (protoc-opts
-                                  proto-paths
-                                  output-path
-                                  (:compile-grpc? config)
-                                  grpc-plugin
-                                  proto-file)]
-                 (println "compiling" (.getName proto-file))
-                 (run-protoc-and-report! protoc protoc-opts)))))))
+            parallelism
+            proto-files
+            (constantly nil)
+            (fn [proto-files]
+              (doseq [proto-file proto-files]
+                (let [protoc-opts (protoc-opts
+                                    proto-paths
+                                    output-path
+                                    (:compile-grpc? config)
+                                    grpc-plugin
+                                    proto-file)]
+                  (println "compiling" (.getName proto-file))
+                  (run-protoc-and-report! protoc protoc-opts)))))))
 
       (finally
         (if keep-tmp?
@@ -430,8 +431,8 @@ and include this full error message to add support for your platform."
 (defn generate-files*!
   "Generate protoc & gRPC stubs according to the `:lein-protodeps` configuration in `project.clj`"
   [opts project]
-  (let [config          (:lein-protodeps project)
-        output-path     (:output-path config)]
+  (let [config      (:lein-protodeps project)
+        output-path (:output-path config)]
     (if (nil? config)
       (print-warning "No :lein-protodeps configuration found in project.clj")
       (binding [*verbose?* (-> opts :verbose)]
@@ -454,15 +455,3 @@ and include this full error message to add support for your platform."
         (case mode
           "generate" (generate-files*! options project)
           (lein/warn "Unknown task" mode))))))
-
-(comment
-  (def config '{:output-path   "src/java/generated"
-                :proto-version "3.12.4"
-                :grpc-version  "1.30.2"
-                :compile-grpc? true
-                :repos         {:my-protos
-                                {:repo-type    :git
-                                 :proto-paths  ["my_products"]
-                                 :config       {:clone-url   "git@localhost:test/repo.git"
-                                                :rev         "mybranch"}
-                                 :dependencies ["my_products/protos"]}}}))
