@@ -11,6 +11,8 @@
            (java.util HashSet)
            (java.util.zip ZipEntry ZipInputStream)))
 
+(set! *warn-on-reflection* true)
+
 (def ^:dynamic *verbose?* false)
 
 (defn- verbose-prn [msg & args]
@@ -30,9 +32,9 @@
 
 
 (defn create-temp-dir!
-  ([] (create-temp-dir! nil))
-  ([^Path base-path]
-   (let [file-attrs (make-array FileAttribute 0)]
+  (^Path [] (create-temp-dir! nil))
+  (^Path [^Path base-path]
+   (let [^"[Ljava.nio.file.attribute.FileAttribute;" file-attrs (make-array FileAttribute 0)]
      (if base-path
        (Files/createTempDirectory base-path nil file-attrs)
        (Files/createTempDirectory nil file-attrs)))))
@@ -58,7 +60,7 @@
     m))
 
 
-(defn mkdir! [dir-path]
+(defn mkdir! ^File [dir-path]
   (let [dir (io/file dir-path)]
     (when-not (or (.exists dir)
                   (.mkdirs dir))
@@ -133,7 +135,7 @@
 
 (defn unzip! [^ZipInputStream zinp dst]
   (loop []
-    (when-let [^ZipEntry entry (.getNextEntry zinp)]
+    (when-let [entry (.getNextEntry zinp)]
       (write-zip-entry! zinp entry dst)
       (.closeEntry zinp)
       (recur))))
@@ -413,7 +415,7 @@ and include this full error message to add support for your platform."
             proto-files
             (constantly nil)
             (fn [proto-files]
-              (doseq [proto-file proto-files]
+              (doseq [^File proto-file proto-files]
                 (let [protoc-opts (protoc-opts
                                     proto-paths
                                     output-path
