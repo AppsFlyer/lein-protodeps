@@ -1,0 +1,4 @@
+{:linters {:consistent-alias {:aliases {clojure.java.io    io
+                                        clojure.java.shell sh
+                                        clojure.set        set
+                                        clojure.string     str}}}}
