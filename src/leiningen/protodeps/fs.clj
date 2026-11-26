@@ -2,7 +2,7 @@
   "File system helpers that never follow symlinks."
   (:require [clojure.java.io :as io]
             [leiningen.protodeps.log :as log])
-  (:import (java.nio.file Files LinkOption Path)))
+  (:import (java.nio.file CopyOption Files LinkOption Path StandardCopyOption)))
 
 (set! *warn-on-reflection* true)
 
@@ -60,3 +60,12 @@
       (catch Exception e
         (log/print-warning "Failed to delete" (str p) ":" (str e))
         false))))
+
+(defn move-into-place!
+  "Atomically move source to target, replacing a file or symlink at target.
+   A directory at target is deleted first, since an atomic move cannot replace one."
+  [source target]
+  (let [target-path (->path target)]
+    (when (directory? target-path)
+      (delete-path! target-path))
+    (Files/move (->path source) target-path (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE]))))

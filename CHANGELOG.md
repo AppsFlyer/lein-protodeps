@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-26
+
+### Added
+* `leiningen.protodeps.archive` namespace that picks a download format from a URL (`.tar.gz`, `.tgz`, `.zip`, `.gz` or plain, ignoring the query string, fragment and case) and extracts a single regular file from it. The file is extracted into a staging dir next to the target and moved into place only on success, so a failed extraction never changes an existing target. Tarballs can store the file as `name` or `./name`, and are extracted with the system `tar`. Staging cleanup only warns on failure.
+* `leiningen.protodeps.fs/move-into-place!` atomically moves a file to a target, replacing a file, symlink or directory there.
+
+### Changed
+* `unzip!` moved to `leiningen.protodeps.archive`. It skips directory entries by their type, so a zip whose entries record their size after the data is extracted in full.
+
 ## [1.1.0] - 2026-11-26
 
 ### Added
@@ -89,7 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.14...v1.1.0
 [1.0.14]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.12...v1.0.13

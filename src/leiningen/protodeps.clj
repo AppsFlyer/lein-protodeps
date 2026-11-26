@@ -5,13 +5,14 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [leiningen.core.main :as lein]
+            [leiningen.protodeps.archive :as archive]
             [leiningen.protodeps.fs :as fs]
             [leiningen.protodeps.log :as log])
   (:import (java.io File)
            (java.nio.file Files Path)
            (java.nio.file.attribute FileAttribute PosixFilePermission)
            (java.util HashSet)
-           (java.util.zip ZipEntry ZipInputStream)))
+           (java.util.zip ZipInputStream)))
 
 (set! *warn-on-reflection* true)
 
@@ -112,30 +113,6 @@
 (defmethod resolve-repo :filesystem [_ repo-config]
   (some-> repo-config :config :path io/file .getAbsolutePath))
 
-(defn write-zip-entry! [^ZipInputStream zinp
-                        ^ZipEntry entry
-                        base-path]
-  (let [file-name  (append-dir base-path (.getName entry))
-        ^File file (io/file file-name)
-        size       (.getCompressedSize entry)]
-    (when (pos? size)
-      (let [^bytes buf (byte-array 1024) ^File parent-file (.getParentFile file)]
-        (mkdir! (.getAbsolutePath parent-file))
-        (with-open [outp (io/output-stream file-name)]
-          (println "unzipping" file-name)
-          (loop []
-            (let [bytes-read (.read zinp buf)]
-              (when (pos? bytes-read)
-                (.write outp buf 0 bytes-read)
-                (recur)))))))))
-
-(defn unzip! [^ZipInputStream zinp dst]
-  (loop []
-    (when-let [entry (.getNextEntry zinp)]
-      (write-zip-entry! zinp entry dst)
-      (.closeEntry zinp)
-      (recur))))
-
 (def os-name->os {"Linux" "linux" "Mac OS X" "osx"})
 (def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64" "aarch64" "aarch_64"})
 
@@ -183,7 +160,7 @@ and include this full error message to add support for your platform."
 (defn download-protoc! [url dst]
   (println "protodeps: Downloading protoc from" url "...")
   (with-open [inp (ZipInputStream. (io/input-stream url))]
-    (unzip! inp dst)))
+    (archive/unzip! inp dst)))
 
 (defn- download-grpc-plugin! [url grpc-plugin-file]
   (println "protodeps: Downloading grpc java plugin from" url "...")
