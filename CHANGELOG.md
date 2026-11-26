@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-11-26
+
+### Changed
+* CI lints and runs the unit tests in a single `test` job instead of a separate `build` job before it.
+* CI workflows default to read-only repository access, and only the Release `deploy` job can write.
+* Updated the plugin version in the README usage snippet to `1.0.11`.
+
 ## [1.0.10] - 2026-11-26
 
 ### Changed
@@ -51,7 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.10...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.11...HEAD
+[1.0.11]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...v1.0.9
 [1.0.7]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.6...v1.0.7
