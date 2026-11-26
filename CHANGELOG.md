@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-11-26
+
+### Changed
+* CI installs clj-kondo `2026.10.26` with `DeLaGuardo/setup-clojure@13` instead of `DeLaGuardo/setup-clj-kondo@master`, which runs on the deprecated Node.js 20.
+* The Release workflow creates a GitHub release with generated notes for the version it tags.
+* Updated the plugin version in the README usage snippet to `1.0.10`.
+
 ## [1.0.9] - 2026-11-26
 
 ### Changed
@@ -44,7 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.9...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.10...HEAD
+[1.0.10]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...v1.0.9
 [1.0.7]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.5...v1.0.6
