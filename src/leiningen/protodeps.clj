@@ -7,8 +7,9 @@
             [leiningen.core.main :as lein]
             [leiningen.protodeps.archive :as archive]
             [leiningen.protodeps.fs :as fs]
-            [leiningen.protodeps.log :as log])
-  (:import (java.io File)
+            [leiningen.protodeps.log :as log]
+            [leiningen.protodeps.spec :as spec])
+  (:import (java.io File FileNotFoundException InputStream)
            (java.nio.file Files Path)
            (java.nio.file.attribute FileAttribute PosixFilePermission)
            (java.util HashSet)
@@ -47,6 +48,16 @@
        :patch   patch
        :semver  semver
        :version semver})))
+
+
+(defn- version-parts
+  "Split a plugin version into :major, :minor and :patch when it has the form x.y.z.
+   Returns nil for other version formats, so their URL templates only get ${:version}."
+  [version]
+  (when-let [[_ major minor patch] (re-matches #"(\d+)\.(\d+)\.(\d+)" version)]
+    {:major major
+     :minor minor
+     :patch patch}))
 
 
 (defn- interpolate [m s]
@@ -113,8 +124,12 @@
 (defmethod resolve-repo :filesystem [_ repo-config]
   (some-> repo-config :config :path io/file .getAbsolutePath))
 
-(def os-name->os {"Linux" "linux" "Mac OS X" "osx"})
-(def os-arch->arch {"amd64" "x86_64" "x86_64" "x86_64" "aarch64" "aarch_64"})
+(def os-name->os {"Linux"    ["linux"]
+                  "Mac OS X" ["osx" "darwin"]})
+
+(def os-arch->arch {"amd64"   ["x86_64" "amd64"]
+                    "x86_64"  ["x86_64" "amd64"]
+                    "aarch64" ["aarch_64" "arm64"]})
 
 
 (defn get-prop [env prop-name]
@@ -123,37 +138,39 @@
     (throw (ex-info "unknown prop" {:prop-name prop-name}))))
 
 
-;; osx/aarch64 release is unavailable yet, therefore we fall back to x86_64
-(def ^:private platform-alternatives {{:os-name "osx" :os-arch "aarch64"}
-                                      {:os-name "osx" :os-arch "x86_64"}})
-
-
 (defn- get-platform [env]
-  (let [raw-os-name (get env "os.name")
-        raw-os-arch (get env "os.arch")
-        os-name     (get os-name->os raw-os-name)
-        os-arch     (get os-arch->arch raw-os-arch)
-        platform    {:os-name os-name :os-arch os-arch}]
-    (when (or (nil? os-arch) (nil? os-name))
+  (let [raw-os-name   (get env "os.name")
+        raw-os-arch   (get env "os.arch")
+        os-variants   (get os-name->os raw-os-name)
+        arch-variants (get os-arch->arch raw-os-arch)]
+    (when (or (nil? os-variants) (nil? arch-variants))
       (throw (ex-info
                "\nPlatform is not currently supported.\n
 Please open an issue at https://github.com/AppsFlyer/lein-protodeps/issues
 and include this full error message to add support for your platform."
-               {:os.name raw-os-name :os.arch raw-os-arch})))
-    (get platform-alternatives platform platform)))
+               {:os.name raw-os-name
+                :os.arch raw-os-arch})))
+    ; The first variant matches protoc's release naming. Plugin downloads try every variant.
+    {:os-name          (first os-variants)
+     :os-arch          (first arch-variants)
+     :os-name-variants os-variants
+     :os-arch-variants arch-variants}))
 
 (defn- get-protoc-release [{:keys [semver os-name os-arch]}]
   (str/join "-" ["protoc" semver os-name os-arch]))
 
 (def ^:private grpc-plugin-executable-name "protoc-gen-grpc-java")
+(def ^:private grpc-output-directive "grpc-java_out")
 
 
-(defn set-protoc-permissions! [protoc-path]
+(defn set-executable-permissions!
+  "Make path readable, writable and executable by its owner only."
+  [path]
   (let [permissions (HashSet.)]
     (.add permissions PosixFilePermission/OWNER_EXECUTE)
     (.add permissions PosixFilePermission/OWNER_READ)
     (.add permissions PosixFilePermission/OWNER_WRITE)
-    (Files/setPosixFilePermissions (.toPath (io/file protoc-path))
+    (Files/setPosixFilePermissions (.toPath (io/file path))
                                    permissions)))
 
 
@@ -162,11 +179,42 @@ and include this full error message to add support for your platform."
   (with-open [inp (ZipInputStream. (io/input-stream url))]
     (archive/unzip! inp dst)))
 
-(defn- download-grpc-plugin! [url grpc-plugin-file]
-  (println "protodeps: Downloading grpc java plugin from" url "...")
-  (with-open [input-stream  (io/input-stream url)
-              output-stream (io/output-stream (io/file grpc-plugin-file))]
-    (io/copy input-stream output-stream)))
+(defn- open-url
+  "Open url for reading. Throws an ex-info naming the url when nothing is found there."
+  ^InputStream [url]
+  (try
+    (io/input-stream url)
+    (catch FileNotFoundException e
+      (throw (ex-info (str "URL not found: " url)
+                      {:url url}
+                      e)))))
+
+(defn- try-download-plugin!
+  "Download a plugin from a single URL to plugin-file. Returns nil on success, or the error of a failed attempt."
+  [plugin-name url plugin-file]
+  (try
+    (println "protodeps: Trying to download" plugin-name "from" url "...")
+    (with-open [input (open-url url)]
+      (archive/extract! (archive/download-format url) input plugin-name plugin-file))
+    (println "protodeps: Downloaded" plugin-name "from" url)
+    nil
+    (catch Exception e
+      (log/print-warning "Failed to download/extract from" url ":" (ex-message e))
+      e)))
+
+(defn- download-plugin!
+  "Try downloading plugin from multiple URL variants until one succeeds.
+   Throws an exception if all URLs fail."
+  [plugin-name urls plugin-file]
+  (loop [[url & remaining] urls
+         last-error nil]
+    (if-not url
+      (throw (ex-info "Failed to download plugin from any URL"
+                      {:plugin plugin-name
+                       :urls   urls}
+                      last-error))
+      (when-let [error (try-download-plugin! plugin-name url plugin-file)]
+        (recur remaining error)))))
 
 
 (defn run-protoc-and-report! [protoc-path opts]
@@ -198,13 +246,13 @@ and include this full error message to add support for your platform."
 
 
 (def ^:private protoc-install-dir "protoc-installations")
-(def ^:private grpc-install-dir "grpc-installations")
+(def ^:private plugins-install-dir "plugins-installations")
 
 (defn init-rc-dir! []
   (let [home (append-dir (get-prop (System/getProperties) "user.home") ".lein-protodeps")]
     (mkdir! home)
     (mkdir! (append-dir home protoc-install-dir))
-    (mkdir! (append-dir home grpc-install-dir))
+    (mkdir! (append-dir home plugins-install-dir))
     home))
 
 (defn discover-files [git-repo-path dep-path]
@@ -290,12 +338,27 @@ and include this full error message to add support for your platform."
   (fs/try-delete-path! path))
 
 
-(defn protoc-opts [proto-paths output-path compile-grpc? grpc-plugin ^File proto-file]
-  (let [protoc-opts (with-proto-paths [(long-opt "java_out" output-path)] proto-paths)]
-    (cond-> protoc-opts
-            compile-grpc? (conj (long-opt "grpc-java_out" output-path))
-            compile-grpc? (conj (long-opt "plugin" grpc-plugin))
-            true (conj (.getAbsolutePath proto-file)))))
+(defn- add-plugin-opts
+  "Add protoc options for a single plugin.
+   protoc pairs `--X_out` with the plugin named `protoc-gen-X`, so the plugin is passed under that name.
+   Options are passed as `--X_opt`, which protoc adds to the plugin's parameters."
+  [protoc-opts output-path {:keys [plugin-path output-directive options]}]
+  (let [plugin-id (strip-suffix "_out" output-directive)]
+    (cond-> (-> protoc-opts
+                (conj (long-opt "plugin" (str "protoc-gen-" plugin-id "=" plugin-path)))
+                (conj (long-opt output-directive output-path)))
+            options (conj (long-opt (str plugin-id "_opt") options)))))
+
+(defn protoc-opts
+  "Build protoc command options with support for multiple plugins.
+   plugins should be a vector of maps with :plugin-path, :output-directive, and optional :options."
+  [proto-paths output-path plugins ^File proto-file]
+  (let [base-opts (with-proto-paths [(long-opt "java_out" output-path)] proto-paths)]
+    (-> (reduce (fn [opts plugin]
+                  (add-plugin-opts opts output-path plugin))
+                base-opts
+                plugins)
+        (conj (.getAbsolutePath proto-file)))))
 
 (def cli-spec
   [["-h" "--help"]
@@ -313,23 +376,71 @@ and include this full error message to add support for your platform."
     (when-not (.exists ^File (io/file protoc))
       (let [protoc-zip-url (interpolate proto-version (protoc-release-template config proto-version))]
         (download-protoc! protoc-zip-url (append-dir protoc-installs protoc-release)))
-      (set-protoc-permissions! protoc))
+      (set-executable-permissions! protoc))
     protoc))
 
 
-(defn- get-grpc-plugin! [home-dir config grpc-version]
-  (let [grpc-semver     (:semver grpc-version)
-        grpc-installs   (append-dir home-dir grpc-install-dir)
-        grpc-plugin-dir (append-dir grpc-installs grpc-semver)
-        grpc-plugin     (append-dir grpc-plugin-dir grpc-plugin-executable-name)]
-    (when (:compile-grpc? config)
-      (when (not (.exists ^File (io/file grpc-plugin)))
-        (mkdir! grpc-plugin-dir)
-        (let [grpc-exe-url (interpolate grpc-version (or (:grpc-exe-url-template config)
-                                                         grpc-release-tpl))]
-          (download-grpc-plugin! grpc-exe-url grpc-plugin))
-        (set-protoc-permissions! grpc-plugin))
-      grpc-plugin)))
+(defn- generate-plugin-urls
+  "Generate all URL variants by combining os-name and os-arch variants."
+  [url-template platform plugin-version]
+  (let [os-variants   (:os-name-variants platform)
+        arch-variants (:os-arch-variants platform)]
+    (distinct
+      (for [os-name os-variants
+            os-arch arch-variants]
+        (interpolate (merge platform
+                            (version-parts plugin-version)
+                            {:version plugin-version
+                             :semver  plugin-version          ; For :grpc-exe-url-template values that use ${:semver}
+                             :os-name os-name
+                             :os-arch os-arch})
+                     url-template)))))
+
+(defn- get-plugin!
+  "Download and install a protoc plugin if not already present.
+   plugin-config is a validated :plugins entry. Uses its :name, :version and :url-template."
+  [home-dir platform plugin-config]
+  (let [plugin-name      (:name plugin-config)
+        plugin-version   (:version plugin-config)
+        install-base-dir (append-dir home-dir plugins-install-dir plugin-name)
+        plugin-dir       (append-dir install-base-dir plugin-version)
+        plugin-path      (append-dir plugin-dir plugin-name)]
+    (when-not (fs/regular-file? plugin-path)
+      (mkdir! plugin-dir)
+      ; archive/extract! moves a download into place only on success,
+      ; so a failed or partial download never ends up at plugin-path.
+      (download-plugin! plugin-name
+                        (generate-plugin-urls (:url-template plugin-config) platform plugin-version)
+                        plugin-path))
+    ; Only chmod when needed, so a cached plugin in a read-only home dir still works
+    (when-not (.canExecute (io/file plugin-path))
+      (set-executable-permissions! plugin-path))
+    plugin-path))
+
+(defn- merge-legacy-grpc-config
+  "Add a gRPC plugin entry to configured-plugins when the legacy :compile-grpc? is true.
+   A gRPC entry in :plugins takes precedence over :compile-grpc?."
+  [configured-plugins config grpc-version]
+  (cond
+    (not (:compile-grpc? config))
+    configured-plugins
+
+    (some #(= grpc-output-directive (:output-directive %)) configured-plugins)
+    (do
+      (log/print-warning ":compile-grpc? is true but :plugins already has a grpc-java_out plugin. Using the :plugins entry.")
+      configured-plugins)
+
+    (nil? grpc-version)
+    (throw (ex-info ":compile-grpc? is true but :grpc-version is not set"
+                    {:compile-grpc? true}))
+
+    :else
+    (cons {:name             grpc-plugin-executable-name
+           :version          (:semver grpc-version)
+           :url-template     (or (:grpc-exe-url-template config)
+                                 grpc-release-tpl)
+           :output-directive grpc-output-directive}
+          configured-plugins)))
 
 (defn generate-files! [opts config]
   (let [base-temp-path (create-temp-dir!)
@@ -344,9 +455,19 @@ and include this full error message to add support for your platform."
             env                (System/getProperties)
             platform           (get-platform env)
             proto-version      (merge platform (parse-semver (:proto-version config)))
-            grpc-version       (merge platform (parse-semver (:grpc-version config)))
+            grpc-version       (when (:grpc-version config)
+                                 (merge platform (parse-semver (:grpc-version config))))
+            ; Validate :plugins, then the merged list, which also covers the gRPC entry from :compile-grpc?
+            plugin-configs     (-> (spec/validate-plugins! (or (:plugins config) []))
+                                   (merge-legacy-grpc-config config grpc-version)
+                                   (spec/validate-plugins!))
             protoc             (get-protoc! home-dir config proto-version)
-            grpc-plugin        (get-grpc-plugin! home-dir config grpc-version)
+            plugins            (mapv (fn [plugin-config]
+                                       (let [plugin-path (get-plugin! home-dir platform plugin-config)]
+                                         {:plugin-path      plugin-path
+                                          :output-directive (:output-directive plugin-config)
+                                          :options          (:options plugin-config)}))
+                                     plugin-configs)
             repo-id->repo-path (into {}
                                      (map
                                        (fn [[k v]]
@@ -359,8 +480,8 @@ and include this full error message to add support for your platform."
                                        repos-config)]
         (mkdir! output-path)
         (verbose-prn "config: %s" config)
-        (verbose-prn "paths: %s" {:protoc      protoc
-                                  :grpc-plugin grpc-plugin})
+        (verbose-prn "paths: %s" {:protoc  protoc
+                                  :plugins (mapv :plugin-path plugins)})
         (verbose-prn "output-path: %s" output-path)
         (doseq [[repo-id repo] repos-config]
           (let [repo-path   (get repo-id->repo-path repo-id)
@@ -388,14 +509,13 @@ and include this full error message to add support for your platform."
               (constantly nil)
               (fn [proto-files]
                 (doseq [^File proto-file proto-files]
-                  (let [protoc-opts (protoc-opts
-                                      proto-paths
-                                      output-path
-                                      (:compile-grpc? config)
-                                      grpc-plugin
-                                      proto-file)]
+                  (let [protoc-opts-args (protoc-opts
+                                           proto-paths
+                                           output-path
+                                           plugins
+                                           proto-file)]
                     (println "compiling" (.getName proto-file))
-                    (run-protoc-and-report! protoc protoc-opts))))))))
+                    (run-protoc-and-report! protoc protoc-opts-args))))))))
 
       (finally
         (if keep-tmp?
