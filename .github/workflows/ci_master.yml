@@ -14,16 +14,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         
       - name: Set up JDK 8
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: 8
           
       - name: Restore local Maven repository from cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
@@ -44,16 +44,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 8
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: 8
 
       - name: Restore local Maven repository from cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
@@ -61,11 +61,9 @@ jobs:
             ${{ runner.os }}-maven-
             
       - name: Install Leiningen
-        run: |
-          wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
-          chmod +x lein
-          sudo mv lein /usr/local/bin/
-          lein version
+        uses: DeLaGuardo/setup-clojure@13
+        with:
+          lein: latest
 
       - name: Unit tests
         env:
@@ -78,19 +76,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
         
       - name: Set up JDK 8
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: 8
           
       - name: Restore local Maven repository from cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles( 'project.clj' ) }}
@@ -98,11 +96,9 @@ jobs:
             ${{ runner.os }}-maven-
             
       - name: Install Leiningen
-        run: |
-          wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
-          chmod +x lein
-          sudo mv lein /usr/local/bin/
-          lein version
+        uses: DeLaGuardo/setup-clojure@13
+        with:
+          lein: latest
 
       - name: Deploy release version
         env:

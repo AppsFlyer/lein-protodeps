@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-11-25
+
 ### Changed
 * Renamed the `:af-proto` repo key to `:my-protos` and the `products/events` dependency to `"my_products/protos"` with `:proto-paths` `["my_products"]` in the `(comment ...)` example in `src/leiningen/protodeps.clj`.
 * Updated the plugin version in the README usage snippet from `1.0.6` to `1.0.7`.
+* PR snapshot deploys run one at a time across all PRs.
+* CI uses `actions/checkout@v7`, `actions/setup-java@v6` and `actions/cache@v6`.
+* CI installs the latest Leiningen with `DeLaGuardo/setup-clojure@13` instead of downloading the `lein` script.
+* Updated the plugin version in the README usage snippet to `1.0.8`.
 
 ## [1.0.7] - 2025-08-07
 
@@ -38,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.5...v1.0.6
