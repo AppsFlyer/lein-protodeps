@@ -4,7 +4,9 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
-            [leiningen.core.main :as lein])
+            [leiningen.core.main :as lein]
+            [leiningen.protodeps.fs :as fs]
+            [leiningen.protodeps.log :as log])
   (:import (java.io File)
            (java.nio.file Files Path)
            (java.nio.file.attribute FileAttribute PosixFilePermission)
@@ -19,13 +21,6 @@
   (when *verbose?*
     (println "protodeps:" (apply format msg args))))
 
-
-(defn print-err [& s]
-  (binding [*out* *err*]
-    (apply println s)))
-
-(defn print-warning [& s]
-  (apply print-err "protodeps: WARNING:" s))
 
 (defn append-dir [parent & children]
   (str/join File/separator (concat [parent] children)))
@@ -199,7 +194,7 @@ and include this full error message to add support for your platform."
 (defn run-protoc-and-report! [protoc-path opts]
   (let [{:keys [out err]} (run-sh! protoc-path opts)]
     (when-not (str/blank? err)
-      (print-err err))
+      (log/print-err err))
     (when-not (str/blank? out)
       (println out))))
 
@@ -311,11 +306,10 @@ and include this full error message to add support for your platform."
                     (str/ends-with? (strip-trailing-slash sp)
                                     (strip-trailing-slash output-path)))
                   (:java-source-paths project))
-    (print-warning "output-path" output-path "not found in :java-source-paths")))
+    (log/print-warning "output-path" output-path "not found in :java-source-paths")))
 
 (defn cleanup-dir! [^Path path]
-  (doseq [file (reverse (file-seq (.toFile path)))]
-    (.delete ^File file)))
+  (fs/try-delete-path! path))
 
 
 (defn protoc-opts [proto-paths output-path compile-grpc? grpc-plugin ^File proto-file]
@@ -360,70 +354,70 @@ and include this full error message to add support for your platform."
       grpc-plugin)))
 
 (defn generate-files! [opts config]
-  (let [home-dir           (init-rc-dir!)
-        parallelism        {:level          (:parallelism opts)
-                            :min-chunk-size 128}
-        repos-config       (:repos config)
-        output-path        (:output-path config)
-        base-temp-path     (create-temp-dir!)
-        ctx                {:base-path base-temp-path}
-        keep-tmp?          (true? (:keep-tmp-dir opts))
-        env                (System/getProperties)
-        platform           (get-platform env)
-        proto-version      (merge platform (parse-semver (:proto-version config)))
-        grpc-version       (merge platform (parse-semver (:grpc-version config)))
-        protoc             (get-protoc! home-dir config proto-version)
-        grpc-plugin        (get-grpc-plugin! home-dir config grpc-version)
-        repo-id->repo-path (into {}
-                                 (map
-                                   (fn [[k v]]
-                                     (let [ctx (assoc ctx :repo-name k)]
-                                       [k (resolve-repo ctx v)])))
-                                 repos-config)
-        proto-paths        (mapcat (fn [[repo-id repo-conf]]
-                                     (map #(append-dir (get repo-id->repo-path repo-id) %)
-                                          (:proto-paths repo-conf)))
-                                   repos-config)]
+  (let [base-temp-path (create-temp-dir!)
+        keep-tmp?      (true? (:keep-tmp-dir opts))]
     (try
-      (mkdir! output-path)
-      (verbose-prn "config: %s" config)
-      (verbose-prn "paths: %s" {:protoc      protoc
-                                :grpc-plugin grpc-plugin})
-      (verbose-prn "output-path: %s" output-path)
-      (doseq [[repo-id repo] repos-config]
-        (let [repo-path   (get repo-id->repo-path repo-id)
-              proto-files (transduce
-                            (map
-                              ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
-                              ;; as part of the `:dependencies` vector.
-                              (fn [proto-dir-or-vec]
-                                (let [proto-dir (if (vector? proto-dir-or-vec)
-                                                  (first proto-dir-or-vec)
-                                                  proto-dir-or-vec)]
-                                  (println "analyzing" proto-dir "... This may take a while for large repos")
-                                  (expand-dependencies
-                                    parallelism
-                                    protoc proto-paths
-                                    (discover-files repo-path (str proto-dir))))))
-                            set/union
-                            (:dependencies repo))]
-          (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
-          (when (empty? proto-files)
-            (print-warning "could not find any .proto files under" repo-id))
-          (parallelize
-            parallelism
-            proto-files
-            (constantly nil)
-            (fn [proto-files]
-              (doseq [^File proto-file proto-files]
-                (let [protoc-opts (protoc-opts
-                                    proto-paths
-                                    output-path
-                                    (:compile-grpc? config)
-                                    grpc-plugin
-                                    proto-file)]
-                  (println "compiling" (.getName proto-file))
-                  (run-protoc-and-report! protoc protoc-opts)))))))
+      (let [home-dir           (init-rc-dir!)
+            parallelism        {:level          (:parallelism opts)
+                                :min-chunk-size 128}
+            repos-config       (:repos config)
+            output-path        (:output-path config)
+            ctx                {:base-path base-temp-path}
+            env                (System/getProperties)
+            platform           (get-platform env)
+            proto-version      (merge platform (parse-semver (:proto-version config)))
+            grpc-version       (merge platform (parse-semver (:grpc-version config)))
+            protoc             (get-protoc! home-dir config proto-version)
+            grpc-plugin        (get-grpc-plugin! home-dir config grpc-version)
+            repo-id->repo-path (into {}
+                                     (map
+                                       (fn [[k v]]
+                                         (let [ctx (assoc ctx :repo-name k)]
+                                           [k (resolve-repo ctx v)])))
+                                     repos-config)
+            proto-paths        (mapcat (fn [[repo-id repo-conf]]
+                                         (map #(append-dir (get repo-id->repo-path repo-id) %)
+                                              (:proto-paths repo-conf)))
+                                       repos-config)]
+        (mkdir! output-path)
+        (verbose-prn "config: %s" config)
+        (verbose-prn "paths: %s" {:protoc      protoc
+                                  :grpc-plugin grpc-plugin})
+        (verbose-prn "output-path: %s" output-path)
+        (doseq [[repo-id repo] repos-config]
+          (let [repo-path   (get repo-id->repo-path repo-id)
+                proto-files (transduce
+                              (map
+                                ;; For backward compatibility, we allow either [[my_dir]] or [my_dir]
+                                ;; as part of the `:dependencies` vector.
+                                (fn [proto-dir-or-vec]
+                                  (let [proto-dir (if (vector? proto-dir-or-vec)
+                                                    (first proto-dir-or-vec)
+                                                    proto-dir-or-vec)]
+                                    (println "analyzing" proto-dir "... This may take a while for large repos")
+                                    (expand-dependencies
+                                      parallelism
+                                      protoc proto-paths
+                                      (discover-files repo-path (str proto-dir))))))
+                              set/union
+                              (:dependencies repo))]
+            (verbose-prn "files: %s" (mapv #(.getName ^File %) proto-files))
+            (when (empty? proto-files)
+              (log/print-warning "could not find any .proto files under" repo-id))
+            (parallelize
+              parallelism
+              proto-files
+              (constantly nil)
+              (fn [proto-files]
+                (doseq [^File proto-file proto-files]
+                  (let [protoc-opts (protoc-opts
+                                      proto-paths
+                                      output-path
+                                      (:compile-grpc? config)
+                                      grpc-plugin
+                                      proto-file)]
+                    (println "compiling" (.getName proto-file))
+                    (run-protoc-and-report! protoc protoc-opts))))))))
 
       (finally
         (if keep-tmp?
@@ -436,7 +430,7 @@ and include this full error message to add support for your platform."
   (let [config      (:lein-protodeps project)
         output-path (:output-path config)]
     (if (nil? config)
-      (print-warning "No :lein-protodeps configuration found in project.clj")
+      (log/print-warning "No :lein-protodeps configuration found in project.clj")
       (binding [*verbose?* (-> opts :verbose)]
         (verbose-prn "config: %s" config)
         (validate-output-path output-path project)
@@ -451,7 +445,7 @@ and include this full error message to add support for your platform."
       (println summary)
       errors
       (doseq [err errors]
-        (print-warning err))
+        (log/print-warning err))
       :else
       (let [mode (first arguments)]
         (case mode

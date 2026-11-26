@@ -1,8 +1,12 @@
 (ns leiningen.protodeps-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [leiningen.protodeps :as sut])
-  (:import (java.io File)
-           (java.nio.file Path)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.io File)
+           (java.nio.file Files Path)
+           (java.nio.file.attribute FileAttribute)))
 
 (set! *warn-on-reflection* true)
 
@@ -104,3 +108,49 @@
           "Generated URL should match the correct format with aarch_64")
       (is (not= incorrect-url generated-url)
           "Generated URL should NOT match the incorrect format with aarch64"))))
+
+(deftest cleanup-dir-test
+  (testing "cleanup-dir! deletes a symlink in the directory, not its target"
+    (let [outside (sut/create-temp-dir!)
+          dir     (sut/create-temp-dir!)
+          kept    (io/file (str outside) "kept")]
+      (try
+        (spit kept "kept")
+        (Files/createSymbolicLink (.resolve dir "link") outside (make-array FileAttribute 0))
+        (sut/cleanup-dir! dir)
+        (is (not (.exists (.toFile dir))))
+        (is (.exists kept))
+        (finally
+          (sut/cleanup-dir! outside))))))
+
+(deftest cleanup-dir-best-effort-test
+  (testing "cleanup-dir! warns instead of throwing when part of the directory cannot be deleted"
+    (let [dir       (sut/create-temp-dir!)
+          read-only (io/file (str dir) "read-only")
+          siblings  (mapv #(io/file (str dir) (str "sibling-" %)) (range 5))]
+      (try
+        (.mkdir read-only)
+        (spit (io/file read-only "file") "file")
+        (.setWritable read-only false)
+        (run! #(spit % "sibling") siblings)
+        (let [err (with-out-str
+                    (binding [*err* *out*]
+                      (sut/cleanup-dir! dir)))]
+          (is (str/includes? err "WARNING: Failed to delete"))
+          (is (.exists read-only))
+          (is (not-any? #(.exists ^File %) siblings)))
+        (finally
+          (.setWritable read-only true)
+          (sut/cleanup-dir! dir))))))
+
+(deftest generate-files-cleanup-on-setup-failure-test
+  (testing "generate-files! deletes its temp dir when setup throws"
+    (let [created                   (atom nil)
+          original-create-temp-dir! sut/create-temp-dir!]
+      (with-redefs [sut/create-temp-dir! (fn [& args]
+                                           (reset! created (apply original-create-temp-dir! args)))
+                    sut/get-platform     (fn [_]
+                                           (throw (ex-info "unsupported platform" {})))]
+        (is (thrown? ExceptionInfo (sut/generate-files! {} {}))))
+      (is (some? @created))
+      (is (not (.exists (.toFile ^Path @created)))))))
