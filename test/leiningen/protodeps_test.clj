@@ -4,8 +4,10 @@
   (:import (java.io File)
            (java.nio.file Path)))
 
+(set! *warn-on-reflection* true)
+
 (defn- run-test! [test]
-  (let [^Path tmp-dir (sut/create-temp-dir!)]
+  (let [tmp-dir (sut/create-temp-dir!)]
     (try
       (test tmp-dir)
       (finally
@@ -13,7 +15,7 @@
 
 (deftest integration-test
   (run-test!
-    (fn [tmp-dir]
+    (fn [^Path tmp-dir]
       (let [config {:output-path   (str tmp-dir)
                     :proto-version "3.11.3"
                     :repos         '{:repo1 {:repo-type    :filesystem
@@ -33,7 +35,7 @@
                     (map str)
                     set))))))
   (run-test!
-    (fn [tmp-dir]
+    (fn [^Path tmp-dir]
       (let [config {:output-path   (str tmp-dir)
                     :proto-version "3.11.3"
                     :repos         '{:repo1 {:repo-type    :filesystem
@@ -53,7 +55,7 @@
                     (map str)
                     set))))))
   (run-test!
-    (fn [tmp-dir]
+    (fn [^Path tmp-dir]
       (let [config {:output-path   (str tmp-dir)
                     :proto-version "3.11.3"
                     :repos         '{:repo1 {:repo-type   :filesystem

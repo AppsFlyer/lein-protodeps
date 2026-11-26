@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-11-26
+
+### Changed
+* `leiningen.protodeps` and its tests enable `*warn-on-reflection*`, and the reflective calls it reported are type hinted.
+* `create-temp-dir!` and `mkdir!` have return type hints, and the file attributes array in `create-temp-dir!` is hinted.
+* The redundant `ZipEntry` hint in `unzip!` is removed.
+
 ## [1.0.12] - 2026-11-26
 
 ### Changed
@@ -61,7 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.12...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.13...HEAD
+[1.0.13]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.9...v1.0.10
