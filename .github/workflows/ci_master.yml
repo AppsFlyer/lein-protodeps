@@ -74,6 +74,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Shares the PR snapshot deploy group, so a release never uploads to Clojars at the same time as a snapshot
+    concurrency:
+      group: clojars-deploy
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v7
