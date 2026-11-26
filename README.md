@@ -30,7 +30,7 @@ are not already installed.
 
 ## Usage
 
-Put `[com.appsflyer/lein-protodeps "1.0.14"]` into the `:plugins` vector of your project.clj.
+Put `[com.appsflyer/lein-protodeps "1.1.0"]` into the `:plugins` vector of your project.clj.
 
 Once installed, run `lein protodeps generate` to run the plugin.
 
@@ -98,12 +98,12 @@ The values of these options are URL templates that will be interpolated at runti
 
 * `:os-name` host OS (i.e, `linux`, `osx`)
 * `:os-arch` host architecture (i.e, `x86_64`, `aarch_64`). Note: `aarch64` systems are automatically mapped to `aarch_64` to match protoc binary naming conventions
-* `:semver` version string as defined in `:protoc-version` or `:grpc-version`
+* `:version` (or `:semver`) version string as defined in `:proto-version` or `:grpc-version`
 * `:major` major part of `:semver`
 * `:minor` minor part of `:semver`
 * `:patch` patch part of `:semver`
 
-For example, to override the gRPC URL you may set `:grpc-exe-url-template` to `https://some-other-place.com/artifacts/grpc/${:semver}/protoc-gen-grpc-java-${:semver}-${:os-name}-${:os-arch}`. Note that
+For example, to override the gRPC URL you may set `:grpc-exe-url-template` to `https://some-other-place.com/artifacts/grpc/${:version}/protoc-gen-grpc-java-${:version}-${:os-name}-${:os-arch}`. Note that
 currently this feature does not support any method of authentication, in case your endpoints require it.
 
 

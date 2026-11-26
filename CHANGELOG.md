@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-26
+
+### Added
+* `${:version}` can be used in `:protoc-zip-url-template` and `:grpc-exe-url-template`, as an alias of `${:semver}`.
+
+### Changed
+* The default gRPC URL template uses `${:version}`.
+
+### Fixed
+* The README names the `:proto-version` key correctly in the URL template variables.
+
 ## [1.0.14] - 2026-11-26
 
 ### Fixed
@@ -78,7 +89,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Optimized Leiningen installation in CI to only run where needed.
 * Added `.java-version` to `.gitignore`.
 
-[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.14...HEAD
+[Unreleased]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.14...v1.1.0
 [1.0.14]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/AppsFlyer/lein-protodeps/compare/v1.0.11...v1.0.12
